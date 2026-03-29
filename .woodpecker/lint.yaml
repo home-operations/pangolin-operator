@@ -1,0 +1,12 @@
+---
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+    branch: main
+
+steps:
+  - name: lint
+    image: golangci/golangci-lint:v2.9.0
+    commands:
+      - golangci-lint run ./...

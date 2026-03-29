@@ -1,0 +1,7 @@
+---
+## Append samples of your project ##
+resources:
+  - pangolin_v1alpha1_newtsite.yaml
+  - pangolin_v1alpha1_publicresource.yaml
+  - pangolin_v1alpha1_privateresource.yaml
+  # +kubebuilder:scaffold:manifestskustomizesamples

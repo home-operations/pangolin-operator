@@ -1,0 +1,18 @@
+---
+apiVersion: pangolin.home-operations.com/v1alpha1
+kind: NewtSite
+metadata:
+  name: newtsite-sample
+  namespace: default
+spec:
+  name: sample-site
+  type: newt
+  newt:
+    image: ghcr.io/fosrl/newt
+    tag: latest
+    replicas: 1
+    logLevel: INFO
+  autoDiscover:
+    annotationPrefix: pangolin-operator
+    gatewayName: envoy-gateway
+    ssl: true

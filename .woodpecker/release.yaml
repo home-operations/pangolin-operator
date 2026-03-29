@@ -1,0 +1,31 @@
+when:
+  - event: tag
+steps:
+  - name: build-and-push
+    image: woodpeckerci/plugin-docker-buildx:6.0.3
+    settings:
+      registry: ghcr.io
+      repo: ghcr.io/${CI_REPO}
+      username:
+        from_secret: registry_username
+      password:
+        from_secret: registry_password
+      platforms: linux/amd64,linux/arm64
+      tags:
+        - ${CI_COMMIT_TAG}
+  - name: helm-publish
+    image: golang:1.26
+    environment:
+      HELM_VERSION: v3.19.0
+      REGISTRY_USERNAME:
+        from_secret: registry_username
+      REGISTRY_PASSWORD:
+        from_secret: registry_password
+    commands:
+      - curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION=${HELM_VERSION} bash
+      - make helm-crds
+      - helm package charts/pangolin-operator --version ${CI_COMMIT_TAG#v} --app-version ${CI_COMMIT_TAG#v}
+      - echo "${REGISTRY_PASSWORD}" | helm registry login ghcr.io --username "${REGISTRY_USERNAME}" --password-stdin
+      - helm push pangolin-operator-${CI_COMMIT_TAG#v}.tgz oci://ghcr.io/${CI_REPO_OWNER}/charts
+    depends_on:
+      - build-and-push

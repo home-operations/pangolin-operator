@@ -1,0 +1,18 @@
+---
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+    branch: main
+
+steps:
+  - name: unit-tests
+    image: golang:1.26
+    commands:
+      - go mod tidy
+      - make test
+
+  - name: integration-tests
+    image: golang:1.26
+    commands:
+      - make test-integration

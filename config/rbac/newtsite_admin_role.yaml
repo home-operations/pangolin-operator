@@ -1,0 +1,28 @@
+---
+# This rule is not used by the pangolin-operator itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants full permissions ('*') over pangolin.home-operations.com NewtSite resources.
+# This role is intended for users authorized to modify roles and bindings within the cluster,
+# enabling them to delegate specific permissions to other users or groups as needed.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: pangolin-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: newtsite-admin-role
+rules:
+  - apiGroups:
+      - pangolin.home-operations.com
+    resources:
+      - newtsites
+    verbs:
+      - '*'
+  - apiGroups:
+      - pangolin.home-operations.com
+    resources:
+      - newtsites/status
+    verbs:
+      - get

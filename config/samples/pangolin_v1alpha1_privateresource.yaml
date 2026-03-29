@@ -1,0 +1,13 @@
+---
+apiVersion: pangolin.home-operations.com/v1alpha1
+kind: PrivateResource
+metadata:
+  name: privateresource-sample
+  namespace: default
+spec:
+  siteRef: newtsite-sample
+  name: sample-private-resource
+  mode: host
+  destination: 192.168.1.100
+  tcpPorts: "*"
+  udpPorts: "*"

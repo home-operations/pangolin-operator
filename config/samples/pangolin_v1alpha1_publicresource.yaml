@@ -1,0 +1,16 @@
+---
+apiVersion: pangolin.home-operations.com/v1alpha1
+kind: PublicResource
+metadata:
+  name: publicresource-sample
+  namespace: default
+spec:
+  siteRef: newtsite-sample
+  name: sample-public-resource
+  protocol: http
+  fullDomain: myapp.example.com
+  ssl: true
+  targets:
+    - hostname: myapp.default.svc.cluster.local
+      port: 8080
+      method: http

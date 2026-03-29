@@ -1,0 +1,42 @@
+---
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+project_name: pangolin-operator
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pangolin-operator
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    main: ./cmd/root.go
+    binary: pangolin-operator
+
+archives:
+  - id: pangolin-operator
+    ids:
+      - pangolin-operator
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+
+upx:
+  - enabled: true
+    compress: best
+    lzma: true

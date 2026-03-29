@@ -1,0 +1,21 @@
+---
+apiVersion: v2
+name: pangolin-operator
+description: A Helm chart for pangolin-operator - Kubernetes operator for Pangolin tunnel management
+type: application
+version: 0.0.0
+appVersion: "0.0.0"
+home: https://github.com/home-operations/pangolin-operator
+sources:
+  - https://github.com/home-operations/pangolin-operator
+maintainers:
+  - name: home-operations
+    email: contact@home-operations.com
+keywords:
+  - pangolin
+  - newt
+  - tunnel
+  - kubernetes
+  - operator
+annotations:
+  category: Infrastructure

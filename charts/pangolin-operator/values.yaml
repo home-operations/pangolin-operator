@@ -1,0 +1,133 @@
+---
+replicaCount: 1
+
+image:
+  repository: ghcr.io/home-operations/pangolin-operator
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+
+resources: {}
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+affinity: {}
+
+controller:
+  logLevel: info
+  leaderElection:
+    enabled: true
+  metrics:
+    enabled: true
+    port: 8080
+    secure: false
+    annotations: {}
+  health:
+    port: 8081
+  pprof:
+    enabled: false
+    port: 6060
+
+pangolin:
+  existingSecret: ""
+  # endpoint is the Pangolin server URL — used by the newt tunnel container
+  endpoint: ""
+  # apiUrl is the Pangolin REST API URL used exclusively by the operator.
+  apiUrl: ""
+  apiKey: ""
+  orgId: ""
+
+# RBAC configuration
+rbac:
+  # Create ClusterRole and ClusterRoleBinding
+  # Required for the controller to manage nodes and create jobs
+  create: true
+  # Annotations for RBAC resources
+  annotations: {}
+
+monitoring:
+  # Prometheus ServiceMonitor for metrics scraping
+  serviceMonitor:
+    # Create ServiceMonitor resource
+    # Requires Prometheus Operator to be installed
+    enabled: false
+    # Scrape interval
+    interval: 30s
+    # Scrape timeout
+    scrapeTimeout: 10s
+    # Metrics path
+    path: /metrics
+    # Additional labels for ServiceMonitor
+    labels: {}
+    # Example:
+    # labels:
+    #   prometheus: kube-prometheus
+    # Annotations for ServiceMonitor
+    annotations: {}
+
+    # Advanced configuration (optional)
+    # Metric relabelings to apply to scraped metrics
+    metricRelabelings: []
+    # Example:
+    # metricRelabelings:
+    #   - sourceLabels: [__name__]
+    #     regex: 'tuppr_(.*)'
+    #     targetLabel: __name__
+    #     replacement: 'controller_${1}'
+
+    # Relabelings to apply before scraping
+    relabelings: []
+    # Target labels to copy from the service
+    targetLabels: []
+    # Pod target labels to copy from pods
+    podTargetLabels: []
