@@ -145,9 +145,8 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 		}
 	}
 
-	podAnnotations := labels
+	var podAnnotations map[string]string
 	if len(spec.PodAnnotations) > 0 {
-		// Separate labels from annotations: build a fresh map so we don't mutate labels.
 		podAnnotations = make(map[string]string, len(spec.PodAnnotations))
 		maps.Copy(podAnnotations, spec.PodAnnotations)
 	}
