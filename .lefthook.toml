@@ -20,3 +20,7 @@ stage_fixed = true
 run = "yamlfmt {staged_files}"
 glob = ["*.yaml"]
 stage_fixed = true
+
+[pre-commit.commands.helm-lint]
+run = "helm lint charts/pangolin-operator"
+glob = ["charts/**"]
