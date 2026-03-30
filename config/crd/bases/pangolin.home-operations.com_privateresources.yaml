@@ -98,10 +98,6 @@ spec:
                 items:
                   type: integer
                 type: array
-              siteNamespace:
-                description: SiteNamespace is the namespace of the NewtSite.
-                minLength: 1
-                type: string
               siteRef:
                 description: SiteRef is the name of the NewtSite that owns this resource.
                 type: string
@@ -124,7 +120,6 @@ spec:
             - destination
             - mode
             - name
-            - siteNamespace
             - siteRef
             type: object
           status:

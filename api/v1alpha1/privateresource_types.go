@@ -10,11 +10,6 @@ type PrivateResourceSpec struct {
 	// +kubebuilder:validation:Required
 	SiteRef string `json:"siteRef"`
 
-	// SiteNamespace is the namespace of the NewtSite.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	SiteNamespace string `json:"siteNamespace"`
-
 	// Name is the display name in Pangolin.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1

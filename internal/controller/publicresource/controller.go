@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
+	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
 )
 
@@ -60,20 +62,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.PublicResource) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	siteNamespace := res.Spec.SiteNamespace
-	if siteNamespace == "" {
-		siteNamespace = res.Namespace
-	}
-	var site pangolinv1alpha1.NewtSite
-	if err := r.Get(ctx, client.ObjectKey{Namespace: siteNamespace, Name: res.Spec.SiteRef}, &site); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, fmt.Errorf("get NewtSite %q: %w", res.Spec.SiteRef, err)
-		}
-		logger.Info("NewtSite not found, requeueing", "site", res.Spec.SiteRef, "siteNamespace", siteNamespace)
+	site, err := ctrlresolve.Site(ctx, r.Client, res.Spec.SiteRef)
+	if err != nil {
 		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-			setCondition(s, metav1.ConditionFalse, reasonPending, fmt.Sprintf("NewtSite %q not found", res.Spec.SiteRef), res.Generation)
+			setCondition(s, metav1.ConditionFalse, reasonPending, err.Error(), res.Generation)
 		})
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		if errors.Is(err, ctrlresolve.ErrNotFound) || errors.Is(err, ctrlresolve.ErrAmbiguous) {
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+		return ctrl.Result{}, err
 	}
 
 	if site.Status.Phase != pangolinv1alpha1.NewtSitePhaseReady || site.Status.SiteID == 0 {

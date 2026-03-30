@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -31,6 +32,7 @@ import (
 	"github.com/home-operations/pangolin-operator/internal/controller/newtsite"
 	"github.com/home-operations/pangolin-operator/internal/controller/privateresource"
 	"github.com/home-operations/pangolin-operator/internal/controller/publicresource"
+	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
 	// +kubebuilder:scaffold:imports
 )
@@ -174,6 +176,16 @@ func main() {
 	}
 
 	setupLog.Info("Setting up controllers")
+
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&pangolinv1alpha1.NewtSite{},
+		ctrlresolve.IndexField,
+		func(obj client.Object) []string { return []string{obj.GetName()} },
+	); err != nil {
+		setupLog.Error(err, "unable to set up NewtSite name index")
+		os.Exit(1)
+	}
 
 	if err := (&newtsite.Reconciler{
 		Client:         mgr.GetClient(),

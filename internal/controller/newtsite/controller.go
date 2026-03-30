@@ -347,7 +347,6 @@ func (r *Reconciler) processHTTPRoute(ctx context.Context, site *pangolinv1alpha
 			logger.Error(err, "skipping hostname", "hostname", host, "route", route.Name)
 			continue
 		}
-		spec.SiteNamespace = site.Namespace
 		resName := autodiscover.HostnameToResourceName(route.Name, host)
 		if err := autodiscover.EnsureHTTPRouteResource(ctx, r.Client, site, route.Name, site.Namespace, resName, spec); err != nil {
 			logger.Error(err, "failed to ensure PublicResource for HTTPRoute hostname", "hostname", host)
@@ -407,7 +406,6 @@ func (r *Reconciler) processService(ctx context.Context, site *pangolinv1alpha1.
 	if !hasFullDomain && autodiscover.ResolveAllPorts(annotations, prefix, cfg) {
 		specs := autodiscover.BuildAllPortSpecs(svc, annotations, prefix, siteRef, clusterHostname)
 		for resName, spec := range specs {
-			spec.SiteNamespace = site.Namespace
 			if err := autodiscover.EnsureServiceResource(ctx, r.Client, site, svc.Name, svc.Namespace, resName, spec); err != nil {
 				logger.Error(err, "failed to ensure PublicResource for Service port", "resource", resName)
 			}
@@ -417,7 +415,6 @@ func (r *Reconciler) processService(ctx context.Context, site *pangolinv1alpha1.
 		if !ok {
 			return
 		}
-		spec.SiteNamespace = site.Namespace
 		if err := autodiscover.EnsureServiceResource(ctx, r.Client, site, svc.Name, svc.Namespace, resName, spec); err != nil {
 			logger.Error(err, "failed to ensure PublicResource for Service", "resource", resName)
 		}
