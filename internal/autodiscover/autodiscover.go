@@ -531,20 +531,3 @@ func ensureOwnedPublicResource(ctx context.Context, c client.Client, owner metav
 	existing.Spec = spec
 	return c.Patch(ctx, existing, patch)
 }
-
-func DeleteOwnedPublicResources(ctx context.Context, c client.Client, namespace, ownerKind, ownerName, siteName string) error {
-	var list pangolinv1alpha1.PublicResourceList
-	if err := c.List(ctx, &list, client.InNamespace(namespace), client.MatchingLabels{
-		"pangolin.home-operations.com/owner-kind": ownerKind,
-		"pangolin.home-operations.com/owner-name": ownerName,
-		"pangolin.home-operations.com/site":       siteName,
-	}); err != nil {
-		return err
-	}
-	for i := range list.Items {
-		if err := c.Delete(ctx, &list.Items[i]); err != nil && client.IgnoreNotFound(err) != nil {
-			return err
-		}
-	}
-	return nil
-}
