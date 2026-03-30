@@ -7,36 +7,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
+	"github.com/home-operations/pangolin-operator/internal/testutil"
 )
-
-func newTestScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = pangolinv1alpha1.AddToScheme(s)
-	_ = corev1.AddToScheme(s)
-	_ = appsv1.AddToScheme(s)
-	return s
-}
-
-// pangolinResponse writes a success envelope to w.
-func pangolinResponse(w http.ResponseWriter, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	type envelope struct {
-		Data    any  `json:"data"`
-		Success bool `json:"success"`
-	}
-	_ = json.NewEncoder(w).Encode(envelope{Data: data, Success: true})
-}
 
 // TestUpdateSite_CallsAPIWhenNameDiffers verifies that updateSite calls UpdateSite
 // when the live name in Pangolin differs from spec.name.
@@ -47,7 +27,7 @@ func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
 	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetSiteResponse{SiteID: 42, Name: "old-name"})
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResponse{SiteID: 42, Name: "old-name"})
 		case http.MethodPost:
 			updateCalled = true
 			var req pangolin.UpdateSiteRequest
@@ -55,7 +35,7 @@ func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
 			if req.Name != "new-name" {
 				t.Errorf("expected name 'new-name', got %q", req.Name)
 			}
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		default:
 			t.Errorf("unexpected method %s", r.Method)
 		}
@@ -64,8 +44,7 @@ func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	cl := fake.NewClientBuilder().
-		WithScheme(newTestScheme()).
+	cl := testutil.NewClientBuilder(testutil.NewScheme()).
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
@@ -74,7 +53,7 @@ func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
 		APIKey:   "key",
 		OrgID:    "org1",
 	})
-	r := &Reconciler{Client: cl, Scheme: newTestScheme(), PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: testutil.NewScheme(), PangolinClient: pc}
 
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
@@ -99,10 +78,10 @@ func TestUpdateSite_SkipsAPIWhenNameUnchanged(t *testing.T) {
 	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetSiteResponse{SiteID: 42, Name: "same-name"})
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResponse{SiteID: 42, Name: "same-name"})
 		case http.MethodPost:
 			updateCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -116,7 +95,7 @@ func TestUpdateSite_SkipsAPIWhenNameUnchanged(t *testing.T) {
 	}
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 
-	r := &Reconciler{Client: fake.NewClientBuilder().WithScheme(newTestScheme()).Build(), Scheme: newTestScheme(), PangolinClient: pc}
+	r := &Reconciler{Client: testutil.NewClientBuilder(testutil.NewScheme()).Build(), Scheme: testutil.NewScheme(), PangolinClient: pc}
 	if err := r.updateSite(context.Background(), site); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +113,7 @@ func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/pick-site-defaults", func(w http.ResponseWriter, r *http.Request) {
-		pangolinResponse(w, pangolin.PickSiteDefaultsResponse{
+		testutil.PangolinResponse(t, w, pangolin.PickSiteDefaultsResponse{
 			NewtID:        "nid",
 			NewtSecret:    "nsec",
 			ClientAddress: clientAddress,
@@ -150,7 +129,7 @@ func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 			t.Errorf("expected address %q, got %q", clientAddress, req.Address)
 		}
 		createSiteCalled = true
-		pangolinResponse(w, pangolin.CreateSiteResponse{SiteID: 10, NiceID: "nice-10"})
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResponse{SiteID: 10, NiceID: "nice-10"})
 	})
 
 	srv := httptest.NewServer(mux)
@@ -165,9 +144,8 @@ func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
 	}
 
-	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
 		WithObjects(site).
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
@@ -200,10 +178,10 @@ func TestReconcile_Update_CallsUpdateSiteOnGenerationChange(t *testing.T) {
 	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetSiteResponse{SiteID: 42, Name: "old-name"})
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResponse{SiteID: 42, Name: "old-name"})
 		case http.MethodPost:
 			updateCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -225,9 +203,8 @@ func TestReconcile_Update_CallsUpdateSiteOnGenerationChange(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
 		WithObjects(site).
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
@@ -254,7 +231,7 @@ func TestCleanup_DeletesSiteAndRemovesFinalizer(t *testing.T) {
 	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			deleteCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -273,9 +250,8 @@ func TestCleanup_DeletesSiteAndRemovesFinalizer(t *testing.T) {
 		Status: pangolinv1alpha1.NewtSiteStatus{SiteID: 42},
 	}
 
-	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
 		WithObjects(site).
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
@@ -326,9 +302,8 @@ func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {
 		Status: pangolinv1alpha1.NewtSiteStatus{SiteID: 42},
 	}
 
-	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
 		WithObjects(site).
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()

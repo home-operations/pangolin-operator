@@ -8,52 +8,14 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
-	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
+	"github.com/home-operations/pangolin-operator/internal/testutil"
 )
-
-func newTestScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = pangolinv1alpha1.AddToScheme(s)
-	return s
-}
-
-func newTestClientBuilder(scheme *runtime.Scheme) *fake.ClientBuilder {
-	return fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithIndex(
-			&pangolinv1alpha1.NewtSite{},
-			ctrlresolve.IndexField,
-			func(obj client.Object) []string { return []string{obj.GetName()} },
-		)
-}
-
-func pangolinResponse(w http.ResponseWriter, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	type envelope struct {
-		Data    any  `json:"data"`
-		Success bool `json:"success"`
-	}
-	_ = json.NewEncoder(w).Encode(envelope{Data: data, Success: true})
-}
-
-func readySite() *pangolinv1alpha1.NewtSite {
-	return &pangolinv1alpha1.NewtSite{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
-		Spec:       pangolinv1alpha1.NewtSiteSpec{},
-		Status: pangolinv1alpha1.NewtSiteStatus{
-			Phase:  pangolinv1alpha1.NewtSitePhaseReady,
-			SiteID: 1,
-		},
-	}
-}
 
 // TestReconcile_CreateResource creates a new PublicResource and verifies that
 // CreateResource and CreateTarget are called, and targetIds + targetsHash are stored.
@@ -64,7 +26,7 @@ func TestReconcile_CreateResource(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, r *http.Request) {
-		pangolinResponse(w, map[string]any{
+		testutil.PangolinResponse(t, w, map[string]any{
 			"domains": []map[string]any{
 				{"domainId": "dom-1", "baseDomain": "example.com"},
 			},
@@ -75,19 +37,19 @@ func TestReconcile_CreateResource(t *testing.T) {
 			t.Errorf("expected PUT, got %s", r.Method)
 		}
 		createResourceCalled = true
-		pangolinResponse(w, pangolin.CreateResourceResponse{ResourceID: 7, NiceID: "res-7", FullDomain: "app.example.com"})
+		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 7, NiceID: "res-7", FullDomain: "app.example.com"})
 	})
 	mux.HandleFunc("/v1/resource/7/target", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Errorf("expected PUT, got %s", r.Method)
 		}
 		createTargetCalled = true
-		pangolinResponse(w, pangolin.CreateTargetResponse{TargetID: 99})
+		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 99})
 	})
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
 		case http.MethodPost:
 			applySettingsCalled = true
 			var req pangolin.UpdateResourceRequest
@@ -98,7 +60,7 @@ func TestReconcile_CreateResource(t *testing.T) {
 			if req.BlockAccess == nil || *req.BlockAccess {
 				t.Error("expected blockAccess=false on create")
 			}
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -120,9 +82,9 @@ func TestReconcile_CreateResource(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
@@ -153,7 +115,7 @@ func TestUpdateResource_NameChange(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetResourceResponse{ResourceID: 7, Name: "old-name"})
+			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "old-name"})
 		case http.MethodPost:
 			updateCalled = true
 			var req pangolin.UpdateResourceRequest
@@ -161,7 +123,7 @@ func TestUpdateResource_NameChange(t *testing.T) {
 			if req.Name != "new-name" {
 				t.Errorf("expected name 'new-name', got %q", req.Name)
 			}
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -181,10 +143,10 @@ func TestUpdateResource_NameChange(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
+	scheme := testutil.NewScheme()
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 	r := &Reconciler{
-		Client: fake.NewClientBuilder().WithScheme(scheme).
+		Client: testutil.NewClientBuilder(scheme).
 			WithObjects(res).
 			WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).Build(),
 		Scheme:         scheme,
@@ -209,21 +171,21 @@ func TestUpdateResource_TargetsChanged(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
 		case http.MethodPost:
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 	mux.HandleFunc("/v1/target/99", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			deleteTargetCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 	mux.HandleFunc("/v1/resource/7/target", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			createTargetCalled = true
-			pangolinResponse(w, pangolin.CreateTargetResponse{TargetID: 100})
+			testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 100})
 		}
 	})
 
@@ -246,9 +208,8 @@ func TestUpdateResource_TargetsChanged(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
 		WithObjects(res).
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
@@ -277,9 +238,9 @@ func TestUpdateResource_TargetsUnchanged(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
 		case http.MethodPost:
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 	mux.HandleFunc("/v1/target/", func(w http.ResponseWriter, r *http.Request) {
@@ -306,10 +267,10 @@ func TestUpdateResource_TargetsUnchanged(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
+	scheme := testutil.NewScheme()
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 	r := &Reconciler{
-		Client: fake.NewClientBuilder().WithScheme(scheme).
+		Client: testutil.NewClientBuilder(scheme).
 			WithObjects(res).
 			WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).Build(),
 		Scheme:         scheme,
@@ -335,7 +296,7 @@ func TestCleanup_DeletesResourceAndRemovesFinalizer(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			deleteCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -354,9 +315,9 @@ func TestCleanup_DeletesResourceAndRemovesFinalizer(t *testing.T) {
 		Status: pangolinv1alpha1.PublicResourceStatus{ResourceID: 7},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
@@ -405,9 +366,9 @@ func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {
 		Status: pangolinv1alpha1.PublicResourceStatus{ResourceID: 7},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
@@ -437,8 +398,8 @@ func TestReconcile_RequeuesWhenSiteNotReady(t *testing.T) {
 		Status:     pangolinv1alpha1.NewtSiteStatus{Phase: pangolinv1alpha1.NewtSitePhasePending},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
 		WithObjects(res, site).
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
@@ -459,7 +420,7 @@ func TestReconcile_RequeuesWhenSiteNotReady(t *testing.T) {
 func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, r *http.Request) {
-		pangolinResponse(w, pangolin.ListDomainsResponse{
+		testutil.PangolinResponse(t, w, pangolin.ListDomainsResponse{
 			Domains: []pangolin.Domain{
 				{DomainID: "d1", BaseDomain: "example.com"},
 			},
@@ -486,9 +447,9 @@ func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 

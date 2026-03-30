@@ -8,52 +8,14 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
-	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
+	"github.com/home-operations/pangolin-operator/internal/testutil"
 )
-
-func newTestScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = pangolinv1alpha1.AddToScheme(s)
-	return s
-}
-
-func newTestClientBuilder(scheme *runtime.Scheme) *fake.ClientBuilder {
-	return fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithIndex(
-			&pangolinv1alpha1.NewtSite{},
-			ctrlresolve.IndexField,
-			func(obj client.Object) []string { return []string{obj.GetName()} },
-		)
-}
-
-func pangolinResponse(w http.ResponseWriter, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	type envelope struct {
-		Data    any  `json:"data"`
-		Success bool `json:"success"`
-	}
-	_ = json.NewEncoder(w).Encode(envelope{Data: data, Success: true})
-}
-
-func readySite() *pangolinv1alpha1.NewtSite {
-	return &pangolinv1alpha1.NewtSite{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
-		Spec:       pangolinv1alpha1.NewtSiteSpec{},
-		Status: pangolinv1alpha1.NewtSiteStatus{
-			Phase:  pangolinv1alpha1.NewtSitePhaseReady,
-			SiteID: 1,
-		},
-	}
-}
 
 // TestReconcile_CreateSiteResource verifies that CreateSiteResource is called
 // with non-nil roleIds/userIds and that the status is updated.
@@ -77,7 +39,7 @@ func TestReconcile_CreateSiteResource(t *testing.T) {
 			t.Error("clientIds must not be nil")
 		}
 		createCalled = true
-		pangolinResponse(w, pangolin.CreateSiteResourceResponse{SiteResourceID: 55, NiceID: "sres-55"})
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 55, NiceID: "sres-55"})
 	})
 
 	srv := httptest.NewServer(mux)
@@ -99,9 +61,9 @@ func TestReconcile_CreateSiteResource(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
@@ -127,7 +89,7 @@ func TestUpdateSiteResource_CallsAPIWhenNameDiffers(t *testing.T) {
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetSiteResourceResponse{
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResourceResponse{
 				SiteResourceID: 55,
 				Name:           "old-name",
 				Mode:           "host",
@@ -143,7 +105,7 @@ func TestUpdateSiteResource_CallsAPIWhenNameDiffers(t *testing.T) {
 			if req.RoleIds == nil || req.UserIds == nil || req.ClientIds == nil {
 				t.Error("roleIds, userIds, and clientIds must not be nil on update")
 			}
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -162,9 +124,9 @@ func TestUpdateSiteResource_CallsAPIWhenNameDiffers(t *testing.T) {
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 	r := &Reconciler{
-		Client: fake.NewClientBuilder().WithScheme(newTestScheme()).
+		Client: testutil.NewClientBuilder(testutil.NewScheme()).
 			WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).Build(),
-		Scheme:         newTestScheme(),
+		Scheme:         testutil.NewScheme(),
 		PangolinClient: pc,
 	}
 
@@ -185,7 +147,7 @@ func TestUpdateSiteResource_AlwaysCallsAPI(t *testing.T) {
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			updateCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -204,8 +166,8 @@ func TestUpdateSiteResource_AlwaysCallsAPI(t *testing.T) {
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 	r := &Reconciler{
-		Client:         fake.NewClientBuilder().WithScheme(newTestScheme()).Build(),
-		Scheme:         newTestScheme(),
+		Client:         testutil.NewClientBuilder(testutil.NewScheme()).Build(),
+		Scheme:         testutil.NewScheme(),
 		PangolinClient: pc,
 	}
 
@@ -226,7 +188,7 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			pangolinResponse(w, pangolin.GetSiteResourceResponse{
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResourceResponse{
 				SiteResourceID: 55,
 				Name:           "old-name",
 				Mode:           "host",
@@ -234,7 +196,7 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 			})
 		case http.MethodPost:
 			updateCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -260,9 +222,9 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 		},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
@@ -287,7 +249,7 @@ func TestCleanup_DeletesSiteResourceAndRemovesFinalizer(t *testing.T) {
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			deleteCalled = true
-			pangolinResponse(w, nil)
+			testutil.PangolinResponse(t, w, nil)
 		}
 	})
 
@@ -306,9 +268,9 @@ func TestCleanup_DeletesSiteResourceAndRemovesFinalizer(t *testing.T) {
 		Status: pangolinv1alpha1.PrivateResourceStatus{SiteResourceID: 55},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
@@ -357,9 +319,9 @@ func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {
 		Status: pangolinv1alpha1.PrivateResourceStatus{SiteResourceID: 55},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
-		WithObjects(res, readySite()).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
@@ -389,8 +351,8 @@ func TestReconcile_RequeuesWhenSiteNotReady(t *testing.T) {
 		Status:     pangolinv1alpha1.NewtSiteStatus{Phase: pangolinv1alpha1.NewtSitePhasePending},
 	}
 
-	scheme := newTestScheme()
-	cl := newTestClientBuilder(scheme).
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
 		WithObjects(res, site).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
