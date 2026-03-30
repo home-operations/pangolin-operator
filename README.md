@@ -49,6 +49,13 @@ The API listens on port `3003` by default. Expose it via Traefik (or another rev
 
 See the [Pangolin Integration API docs](https://docs.pangolin.net/self-host/advanced/integration-api) for the full setup including Traefik routing configuration and Swagger UI access.
 
+You will need to create an Org API key. With at least for permissions:
+- List Organization Domains
+- All for Sites
+- All for Resources
+- All for Targets
+- All for Resource Rules
+
 ## Configuration
 
 The operator reads its Pangolin credentials from environment variables:
