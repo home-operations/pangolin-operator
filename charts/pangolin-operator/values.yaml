@@ -17,6 +17,8 @@ serviceAccount:
   # The operator needs API access — do not disable this.
   automount: true
 
+priorityClassName: system-node-critical
+
 podAnnotations: {}
 podLabels: {}
 
