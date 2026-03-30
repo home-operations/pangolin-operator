@@ -1,4 +1,5 @@
 {{- if not .Values.pangolin.existingSecret -}}
+{{- if and .Values.pangolin.endpoint .Values.pangolin.apiUrl .Values.pangolin.apiKey .Values.pangolin.orgId -}}
 ---
 apiVersion: v1
 kind: Secret
@@ -12,4 +13,5 @@ stringData:
   PANGOLIN_API_URL: {{ .Values.pangolin.apiUrl | quote }}
   PANGOLIN_API_KEY: {{ .Values.pangolin.apiKey | quote }}
   PANGOLIN_ORG_ID: {{ .Values.pangolin.orgId | quote }}
+{{- end }}
 {{- end }}
