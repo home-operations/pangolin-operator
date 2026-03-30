@@ -452,9 +452,11 @@ func TestReconcile_RequeuesWhenSiteNotReady(t *testing.T) {
 func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, r *http.Request) {
-		pangolinResponse(w, struct {
-			Domains []any `json:"domains"`
-		}{Domains: []any{}})
+		pangolinResponse(w, pangolin.ListDomainsResponse{
+			Domains: []pangolin.Domain{
+				{DomainID: "d1", BaseDomain: "example.com"},
+			},
+		})
 	})
 	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
