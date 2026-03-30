@@ -465,3 +465,71 @@ func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 		t.Error("expected RequeueAfter to be set on conflict")
 	}
 }
+
+// TestReconcile_CreateResource_TargetFailure verifies that when CreateTarget fails
+// after CreateResource succeeds, the resourceID is still persisted in status so that
+// re-reconciliation doesn't create a duplicate resource.
+func TestReconcile_CreateResource_TargetFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, _ *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{
+			"domains": []map[string]any{
+				{"domainId": "dom-1", "baseDomain": "example.com"},
+			},
+		})
+	})
+	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, _ *http.Request) {
+		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 7, NiceID: "res-7", FullDomain: "app.example.com"})
+	})
+	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
+	mux.HandleFunc("/v1/resource/7/target", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "target backend error"})
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PublicResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-res",
+			Namespace:  "default",
+			Finalizers: []string{PublicResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PublicResourceSpec{
+			SiteRef:    "my-site",
+			Name:       "my-res",
+			FullDomain: "app.example.com",
+			Protocol:   "http",
+			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 8080, Method: "http"}},
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-res", Namespace: "default"},
+	})
+	if err == nil {
+		t.Fatal("expected error when CreateTarget fails")
+	}
+
+	// ResourceID should still be persisted so the next reconcile doesn't re-create the resource.
+	var updated pangolinv1alpha1.PublicResource
+	if getErr := cl.Get(context.Background(), client.ObjectKey{Name: "my-res", Namespace: "default"}, &updated); getErr != nil {
+		t.Fatalf("failed to get resource: %v", getErr)
+	}
+	if updated.Status.ResourceID == 0 {
+		t.Error("expected ResourceID to be persisted in status after partial failure")
+	}
+}
