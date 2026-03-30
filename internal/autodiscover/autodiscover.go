@@ -529,5 +529,11 @@ func ensureOwnedPublicResource(ctx context.Context, c client.Client, owner metav
 	}
 	patch := client.MergeFrom(existing.DeepCopy())
 	existing.Spec = spec
+	if existing.Labels == nil {
+		existing.Labels = make(map[string]string, 3)
+	}
+	existing.Labels["pangolin.home-operations.com/owner-kind"] = ownerKind
+	existing.Labels["pangolin.home-operations.com/owner-name"] = ownerName
+	existing.Labels["pangolin.home-operations.com/site"] = owner.GetName()
 	return c.Patch(ctx, existing, patch)
 }
