@@ -143,7 +143,7 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 			port = 9090
 		}
 		newtContainer.Ports = []corev1.ContainerPort{
-			{Name: "metrics", ContainerPort: int32(port), Protocol: corev1.ProtocolTCP},
+			{Name: "metrics", ContainerPort: int32(port), Protocol: corev1.ProtocolTCP}, //nolint:gosec // port is validated by kubebuilder (1-65535)
 		}
 	}
 

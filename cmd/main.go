@@ -9,6 +9,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"strings"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -112,7 +113,7 @@ func main() {
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
-		srv := &http.Server{Addr: pprofAddr, Handler: mux}
+		srv := &http.Server{Addr: pprofAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 		setupLog.Info("starting pprof server", "address", pprofAddr)
 		go func() {
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
