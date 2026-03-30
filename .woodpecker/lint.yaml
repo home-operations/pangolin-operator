@@ -12,6 +12,6 @@ steps:
       - golangci-lint run ./...
 
   - name: helm-lint
-    image: alpine/helm:3.17.3
+    image: alpine/helm:4.1.3
     commands:
       - helm lint charts/pangolin-operator
