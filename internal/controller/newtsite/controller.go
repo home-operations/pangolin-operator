@@ -127,7 +127,10 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	if site.Spec.AutoDiscover != nil {
+		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {
