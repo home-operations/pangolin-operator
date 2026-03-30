@@ -1,0 +1,32 @@
+pangolin-operator has been installed.
+
+Namespace: {{ .Release.Namespace }}
+Release:   {{ .Release.Name }}
+
+{{- if not .Values.pangolin.existingSecret }}
+{{- if or (not .Values.pangolin.apiUrl) (not .Values.pangolin.apiKey) (not .Values.pangolin.orgId) (not .Values.pangolin.endpoint) }}
+
+WARNING: Pangolin credentials are not fully configured.
+Set pangolin.apiUrl, pangolin.apiKey, pangolin.orgId, and pangolin.endpoint
+in your values or provide an existing secret via pangolin.existingSecret.
+{{- end }}
+{{- end }}
+
+To check the operator status:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l {{ include "pangolin-operator.selectorLabels" . | replace ": " "=" | replace "\n" "," }}
+
+To create your first site:
+
+  cat <<EOF | kubectl apply -f -
+  apiVersion: pangolin.home-operations.com/v1alpha1
+  kind: NewtSite
+  metadata:
+    name: my-site
+    namespace: {{ .Release.Namespace }}
+  spec:
+    name: my-site
+  EOF
+
+For more information, visit:
+  https://github.com/home-operations/pangolin-operator
