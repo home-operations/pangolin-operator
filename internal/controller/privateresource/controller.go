@@ -62,7 +62,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	site, err := ctrlresolve.Site(ctx, r.Client, res.Spec.SiteRef)
 	if err != nil {
 		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
-			setCondition(&res.Status.Conditions, s, metav1.ConditionFalse, reasonPending, err.Error(), res.Generation)
+			setCondition(s, metav1.ConditionFalse, reasonPending, err.Error(), res.Generation)
 		})
 		if errors.Is(err, ctrlresolve.ErrNotFound) || errors.Is(err, ctrlresolve.ErrAmbiguous) {
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
@@ -73,7 +73,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	if site.Status.Phase != pangolinv1alpha1.NewtSitePhaseReady || site.Status.SiteID == 0 {
 		logger.Info("NewtSite not yet ready, requeueing", "site", res.Spec.SiteRef)
 		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
-			setCondition(&res.Status.Conditions, s, metav1.ConditionFalse, reasonPending, "waiting for NewtSite to become ready", res.Generation)
+			setCondition(s, metav1.ConditionFalse, reasonPending, "waiting for NewtSite to become ready", res.Generation)
 		})
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
@@ -81,7 +81,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	if res.Status.SiteResourceID == 0 {
 		if err := r.createSiteResource(ctx, res, site.Status.SiteID); err != nil {
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
-				setCondition(&res.Status.Conditions, s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
 			})
 			return ctrl.Result{}, err
 		}
@@ -103,7 +103,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 				return ctrl.Result{Requeue: true}, nil
 			}
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
-				setCondition(&res.Status.Conditions, s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
 			})
 			return ctrl.Result{}, err
 		}
@@ -112,7 +112,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 		s.Phase = pangolinv1alpha1.PrivateResourcePhaseReady
 		s.ObservedGeneration = res.Generation
-		setCondition(&res.Status.Conditions, s, metav1.ConditionTrue, reasonReconciled, "resource reconciled successfully", res.Generation)
+		setCondition(s, metav1.ConditionTrue, reasonReconciled, "resource reconciled successfully", res.Generation)
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -223,15 +223,14 @@ func (r *Reconciler) patchStatus(ctx context.Context, res *pangolinv1alpha1.Priv
 	return r.Status().Patch(ctx, res, patch)
 }
 
-func setCondition(existing *[]metav1.Condition, s *pangolinv1alpha1.PrivateResourceStatus, status metav1.ConditionStatus, reason, message string, generation int64) {
-	apimeta.SetStatusCondition(existing, metav1.Condition{
+func setCondition(s *pangolinv1alpha1.PrivateResourceStatus, status metav1.ConditionStatus, reason, message string, generation int64) {
+	apimeta.SetStatusCondition(&s.Conditions, metav1.Condition{
 		Type:               conditionReady,
 		Status:             status,
 		ObservedGeneration: generation,
 		Reason:             reason,
 		Message:            message,
 	})
-	s.Conditions = *existing
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
