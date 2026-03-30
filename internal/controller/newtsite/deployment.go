@@ -2,6 +2,7 @@ package newtsite
 
 import (
 	"fmt"
+	"maps"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -76,12 +77,41 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 			Value: logLevel,
 		},
 	}
-	if spec.Mtu > 0 {
+	if spec.Mtu != 1280 {
 		env = append(env, corev1.EnvVar{
 			Name:  "MTU",
 			Value: fmt.Sprintf("%d", spec.Mtu),
 		})
 	}
+	if spec.PingInterval != "" {
+		env = append(env, corev1.EnvVar{Name: "PING_INTERVAL", Value: spec.PingInterval})
+	}
+	if spec.PingTimeout != "" {
+		env = append(env, corev1.EnvVar{Name: "PING_TIMEOUT", Value: spec.PingTimeout})
+	}
+	if spec.DNS != "" {
+		env = append(env, corev1.EnvVar{Name: "DNS", Value: spec.DNS})
+	}
+	if spec.AcceptClients {
+		env = append(env, corev1.EnvVar{Name: "ACCEPT_CLIENTS", Value: "true"})
+	}
+	if spec.Interface != "" && spec.Interface != "newt" {
+		env = append(env, corev1.EnvVar{Name: "INTERFACE", Value: spec.Interface})
+	}
+	if spec.Metrics != nil {
+		adminAddr := spec.Metrics.AdminAddr
+		if adminAddr == "" {
+			port := spec.Metrics.Port
+			if port == 0 {
+				port = 9090
+			}
+			adminAddr = fmt.Sprintf("0.0.0.0:%d", port)
+		}
+		env = append(env, corev1.EnvVar{Name: "NEWT_ADMIN_ADDR", Value: adminAddr})
+	}
+
+	// Extra env vars are appended last so they can override anything above.
+	env = append(env, spec.ExtraEnv...)
 
 	newtResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -93,45 +123,7 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 		newtResources = *spec.Resources
 	}
 
-	var containerSecCtx *corev1.SecurityContext
-	var podSecCtx *corev1.PodSecurityContext
-
-	if spec.UseNativeInterface {
-		runAsRoot := int64(0)
-		privileged := true
-		allowPrivEsc := true
-		containerSecCtx = &corev1.SecurityContext{
-			RunAsUser:                &runAsRoot,
-			Privileged:               &privileged,
-			AllowPrivilegeEscalation: &allowPrivEsc,
-			Capabilities: &corev1.Capabilities{
-				Add: []corev1.Capability{"NET_ADMIN", "SYS_MODULE"},
-			},
-		}
-		// No pod-level non-root or seccomp restrictions in native mode.
-		podSecCtx = nil
-	} else {
-		runAsUser := int64(65534)
-		runAsNonRoot := true
-		readOnly := true
-		allowPrivEsc := false
-		containerSecCtx = &corev1.SecurityContext{
-			RunAsUser:                &runAsUser,
-			RunAsNonRoot:             &runAsNonRoot,
-			ReadOnlyRootFilesystem:   &readOnly,
-			AllowPrivilegeEscalation: &allowPrivEsc,
-			Capabilities: &corev1.Capabilities{
-				Drop: []corev1.Capability{"ALL"},
-			},
-		}
-		runAsNonRootPod := true
-		podSecCtx = &corev1.PodSecurityContext{
-			RunAsNonRoot: &runAsNonRootPod,
-			SeccompProfile: &corev1.SeccompProfile{
-				Type: corev1.SeccompProfileTypeRuntimeDefault,
-			},
-		}
-	}
+	containerSecCtx, podSecCtx := buildSecurityContexts(spec)
 
 	newtContainer := corev1.Container{
 		Name:            "newt",
@@ -139,6 +131,25 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 		Env:             env,
 		SecurityContext: containerSecCtx,
 		Resources:       newtResources,
+		VolumeMounts:    spec.ExtraVolumeMounts,
+	}
+
+	// Expose the metrics port as a named container port when metrics are configured.
+	if spec.Metrics != nil {
+		port := spec.Metrics.Port
+		if port == 0 {
+			port = 9090
+		}
+		newtContainer.Ports = []corev1.ContainerPort{
+			{Name: "metrics", ContainerPort: int32(port), Protocol: corev1.ProtocolTCP},
+		}
+	}
+
+	podAnnotations := labels
+	if len(spec.PodAnnotations) > 0 {
+		// Separate labels from annotations: build a fresh map so we don't mutate labels.
+		podAnnotations = make(map[string]string, len(spec.PodAnnotations))
+		maps.Copy(podAnnotations, spec.PodAnnotations)
 	}
 
 	podSpec := corev1.PodSpec{
@@ -148,7 +159,13 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 		SecurityContext:               podSecCtx,
 		HostNetwork:                   spec.UseNativeInterface && spec.HostNetwork,
 		HostPID:                       spec.UseNativeInterface && spec.HostPID,
-		Containers:                    []corev1.Container{newtContainer},
+		InitContainers:                spec.InitContainers,
+		Containers:                    append([]corev1.Container{newtContainer}, spec.ExtraContainers...),
+		Volumes:                       spec.ExtraVolumes,
+		NodeSelector:                  spec.NodeSelector,
+		Tolerations:                   spec.Tolerations,
+		Affinity:                      spec.Affinity,
+		TopologySpreadConstraints:     spec.TopologySpreadConstraints,
 	}
 
 	return &appsv1.Deployment{
@@ -164,10 +181,58 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels:      labels,
+					Annotations: podAnnotations,
 				},
 				Spec: podSpec,
 			},
 		},
 	}
+}
+
+// buildSecurityContexts returns the container- and pod-level security contexts.
+// User-provided overrides in NewtSpec take precedence over operator defaults.
+func buildSecurityContexts(spec pangolinv1alpha1.NewtSpec) (*corev1.SecurityContext, *corev1.PodSecurityContext) {
+	// If the user provided explicit overrides, use them as-is.
+	if spec.SecurityContext != nil || spec.PodSecurityContext != nil {
+		return spec.SecurityContext, spec.PodSecurityContext
+	}
+
+	if spec.UseNativeInterface {
+		runAsRoot := int64(0)
+		privileged := true
+		allowPrivEsc := true
+		containerSecCtx := &corev1.SecurityContext{
+			RunAsUser:                &runAsRoot,
+			Privileged:               &privileged,
+			AllowPrivilegeEscalation: &allowPrivEsc,
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{"NET_ADMIN", "SYS_MODULE"},
+			},
+		}
+		// No pod-level non-root or seccomp restrictions in native mode.
+		return containerSecCtx, nil
+	}
+
+	runAsUser := int64(65534)
+	runAsNonRoot := true
+	readOnly := true
+	allowPrivEsc := false
+	containerSecCtx := &corev1.SecurityContext{
+		RunAsUser:                &runAsUser,
+		RunAsNonRoot:             &runAsNonRoot,
+		ReadOnlyRootFilesystem:   &readOnly,
+		AllowPrivilegeEscalation: &allowPrivEsc,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+	}
+	runAsNonRootPod := true
+	podSecCtx := &corev1.PodSecurityContext{
+		RunAsNonRoot: &runAsNonRootPod,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+	return containerSecCtx, podSecCtx
 }

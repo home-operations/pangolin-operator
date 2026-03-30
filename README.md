@@ -78,6 +78,12 @@ spec:
     tag: latest
     replicas: 1
     logLevel: INFO    # DEBUG | INFO | WARN | ERROR
+    mtu: 1380         # WireGuard MTU (default: unset)
+    pingInterval: "60s"   # WireGuard keepalive interval (PING_INTERVAL env)
+    pingTimeout: "5s"     # WireGuard ping timeout (PING_TIMEOUT env)
+    interface: "newt"     # WireGuard interface name (INTERFACE env, default "newt")
+    dns: "1.1.1.1"        # custom DNS pushed into tunnel (DNS env)
+    acceptClients: false  # accept incoming VPN clients (ACCEPT_CLIENTS env)
     resources:
       requests:
         cpu: 10m
@@ -105,6 +111,91 @@ spec:
     useNativeInterface: true
     hostNetwork: true   # optional: grant host network namespace
     hostPID: false
+```
+
+### Scheduling and placement
+
+```yaml
+spec:
+  newt:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: [us-east-1a]
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/instance: homelab
+```
+
+### Metrics
+
+Set `newt.metrics` to expose a Prometheus metrics endpoint. The operator sets `NEWT_ADMIN_ADDR` to bind the metrics server inside the container and adds a named `metrics` container port.
+
+```yaml
+spec:
+  newt:
+    metrics:
+      port: 2112        # metrics container port (default 9090)
+      # adminAddr: "0.0.0.0:2112"  # override full bind address if needed
+```
+
+### Extra environment variables, volumes, and containers
+
+```yaml
+spec:
+  newt:
+    extraEnv:
+      - name: BLUEPRINT_FILE
+        value: /config/blueprint.json
+      - name: NEWT_METRICS_PROMETHEUS_ENABLED
+        value: "true"
+    extraVolumes:
+      - name: blueprint-config
+        configMap:
+          name: my-blueprint
+    extraVolumeMounts:
+      - name: blueprint-config
+        mountPath: /config
+        readOnly: true
+    initContainers:
+      - name: wait-for-dependency
+        image: busybox:latest
+        command: ["sh", "-c", "until wget -qO- http://dep/health; do sleep 2; done"]
+    extraContainers:
+      - name: sidecar
+        image: my-sidecar:latest
+```
+
+### Security context overrides
+
+By default the operator enforces a secure non-root context (or root+privileged for native WireGuard). Both contexts can be replaced entirely:
+
+```yaml
+spec:
+  newt:
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    securityContext:
+      runAsUser: 65534
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
 ```
 
 ## PublicResource

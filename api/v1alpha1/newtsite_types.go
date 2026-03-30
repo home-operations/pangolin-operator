@@ -53,9 +53,32 @@ type NewtSpec struct {
 	// +kubebuilder:default="INFO"
 	// +optional
 	LogLevel string `json:"logLevel,omitempty"`
-	// Mtu is the MTU for the WireGuard tunnel
+	// Mtu is the MTU for the WireGuard tunnel (default 1280).
+	// +kubebuilder:default=1280
 	// +optional
 	Mtu int `json:"mtu,omitempty"`
+	// PingInterval is the WireGuard keepalive interval (e.g. "60s").
+	// Maps to the PING_INTERVAL environment variable.
+	// +optional
+	PingInterval string `json:"pingInterval,omitempty"`
+	// PingTimeout is the WireGuard ping timeout (e.g. "5s").
+	// Maps to the PING_TIMEOUT environment variable.
+	// +optional
+	PingTimeout string `json:"pingTimeout,omitempty"`
+	// Interface is the WireGuard interface name inside the pod (default "newt").
+	// Only needs to be set when a custom name is required.
+	// Maps to the INTERFACE environment variable.
+	// +kubebuilder:default="newt"
+	// +optional
+	Interface string `json:"interface,omitempty"`
+	// DNS is the custom DNS server address pushed into the tunnel.
+	// Maps to the DNS environment variable.
+	// +optional
+	DNS string `json:"dns,omitempty"`
+	// AcceptClients allows the newt tunnel to accept incoming VPN client connections.
+	// Maps to the ACCEPT_CLIENTS environment variable.
+	// +optional
+	AcceptClients bool `json:"acceptClients,omitempty"`
 	// Resources for the newt container
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -73,6 +96,65 @@ type NewtSpec struct {
 	// Only meaningful when UseNativeInterface is true.
 	// +optional
 	HostPID bool `json:"hostPID,omitempty"`
+	// PodAnnotations are extra annotations added to the pod template.
+	// +optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+	// NodeSelector constrains the pod to nodes matching the given labels.
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// Tolerations for the pod.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// Affinity for the pod.
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// TopologySpreadConstraints for the pod.
+	// +optional
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
+	// PodSecurityContext overrides the pod-level security context.
+	// When unset the operator applies sensible defaults (non-root, seccomp RuntimeDefault).
+	// Setting this field replaces the operator defaults entirely.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+	// SecurityContext overrides the container-level security context.
+	// When unset the operator applies sensible defaults.
+	// Setting this field replaces the operator defaults entirely.
+	// +optional
+	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
+	// ExtraEnv injects additional environment variables into the newt container.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	// ExtraVolumes adds extra volumes to the pod.
+	// +optional
+	ExtraVolumes []corev1.Volume `json:"extraVolumes,omitempty"`
+	// ExtraVolumeMounts adds extra volume mounts to the newt container.
+	// +optional
+	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
+	// InitContainers adds init containers to the pod (run before the newt container).
+	// +optional
+	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+	// ExtraContainers adds sidecar containers alongside the newt container.
+	// +optional
+	ExtraContainers []corev1.Container `json:"extraContainers,omitempty"`
+	// Metrics configures Prometheus metrics exposure for the newt container.
+	// +optional
+	Metrics *NewtMetricsSpec `json:"metrics,omitempty"`
+}
+
+// NewtMetricsSpec configures Prometheus metrics for the newt container.
+type NewtMetricsSpec struct {
+	// Port is the container port on which newt exposes metrics (default 9090).
+	// Maps to the NEWT_ADMIN_ADDR environment variable (0.0.0.0:<Port>).
+	// +kubebuilder:default=9090
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Port int `json:"port,omitempty"`
+	// AdminAddr overrides the full admin address (host:port) bound by newt.
+	// When empty, defaults to "0.0.0.0:<Port>".
+	// Maps directly to the NEWT_ADMIN_ADDR environment variable.
+	// +optional
+	AdminAddr string `json:"adminAddr,omitempty"`
 }
 
 // AutoDiscoverSpec configures operator-native HTTPRoute/Service auto-discovery for a NewtSite.
