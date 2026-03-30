@@ -464,3 +464,141 @@ func TestDo_AuthorizationHeader(t *testing.T) {
 		t.Errorf("expected 'Bearer test-key', got %q", gotAuth)
 	}
 }
+
+func TestListDomains(t *testing.T) {
+	want := []Domain{
+		{DomainID: "d1", BaseDomain: "example.com"},
+		{DomainID: "d2", BaseDomain: "test.io"},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/test-org/domains", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		apiResponse(t, w, ListDomainsResponse{Domains: want})
+	})
+
+	c := newTestClient(t, mux)
+	got, err := c.ListDomains(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 domains, got %d", len(got))
+	}
+	if got[0].DomainID != "d1" || got[1].BaseDomain != "test.io" {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestResolveDomainID(t *testing.T) {
+	domains := []Domain{
+		{DomainID: "d1", BaseDomain: "example.com"},
+		{DomainID: "d2", BaseDomain: "sub.example.com"},
+	}
+
+	tests := []struct {
+		name       string
+		fullDomain string
+		wantID     string
+		wantOK     bool
+	}{
+		{"exact match", "example.com", "d1", true},
+		{"subdomain match", "app.example.com", "d1", true},
+		{"longest suffix wins", "foo.sub.example.com", "d2", true},
+		{"no match", "other.io", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := ResolveDomainID(domains, tt.fullDomain)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestCreateRule(t *testing.T) {
+	want := CreateRuleResponse{RuleID: 33}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/resource/7/rule", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		var req CreateRuleRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("could not decode request body: %v", err)
+		}
+		if req.Action != "DROP" || req.Match != "CIDR" {
+			t.Errorf("unexpected rule: action=%q match=%q", req.Action, req.Match)
+		}
+		apiResponse(t, w, want)
+	})
+
+	c := newTestClient(t, mux)
+	got, err := c.CreateRule(context.Background(), 7, CreateRuleRequest{
+		Action:   "DROP",
+		Match:    "CIDR",
+		Value:    "10.0.0.0/8",
+		Priority: 10,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.RuleID != want.RuleID {
+		t.Errorf("got ruleID %d, want %d", got.RuleID, want.RuleID)
+	}
+}
+
+func TestDeleteRule(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/rule/33", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		apiResponse(t, w, nil)
+	})
+
+	c := newTestClient(t, mux)
+	if err := c.DeleteRule(context.Background(), 33); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDo_NotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/site/999", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	c := newTestClient(t, mux)
+	_, err := c.GetSite(context.Background(), 999)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !IsNotFound(err) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestDo_Conflict(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/test-org/resource", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+	})
+
+	c := newTestClient(t, mux)
+	_, err := c.CreateResource(context.Background(), CreateResourceRequest{Name: "dup"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !IsConflict(err) {
+		t.Errorf("expected ErrConflict, got %T: %v", err, err)
+	}
+}
