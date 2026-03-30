@@ -40,10 +40,10 @@ securityContext:
 
 resources:
   requests:
-    cpu: 100m
-    memory: 128Mi
+    cpu: 10m
+    memory: 64Mi
   limits:
-    memory: 256Mi
+    memory: 128Mi
 
 livenessProbe:
   httpGet:
