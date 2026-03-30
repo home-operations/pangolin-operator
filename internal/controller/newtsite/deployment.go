@@ -12,6 +12,8 @@ import (
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 )
 
+const defaultMTU = 1280
+
 // buildDeployment constructs the appsv1.Deployment for the newt tunnel pod.
 // secretName is the name of the Secret containing PANGOLIN_ENDPOINT, NEWT_ID, NEWT_SECRET.
 func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1.Deployment {
@@ -77,7 +79,7 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 			Value: logLevel,
 		},
 	}
-	if spec.Mtu != 1280 {
+	if spec.Mtu != defaultMTU {
 		env = append(env, corev1.EnvVar{
 			Name:  "MTU",
 			Value: fmt.Sprintf("%d", spec.Mtu),
