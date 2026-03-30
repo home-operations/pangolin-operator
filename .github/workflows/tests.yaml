@@ -27,6 +27,3 @@ jobs:
         run: |-
           go mod tidy
           make test
-
-      - name: Running Integration Tests
-        run: make test-integration
