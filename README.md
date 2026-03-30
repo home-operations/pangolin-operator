@@ -49,7 +49,7 @@ The API listens on port `3003` by default. Expose it via Traefik (or another rev
 
 See the [Pangolin Integration API docs](https://docs.pangolin.net/self-host/advanced/integration-api) for the full setup including Traefik routing configuration and Swagger UI access.
 
-You will need to create an Org API key. With at least for permissions:
+You will need to create an Org API key with at least the following permissions:
 - List Organization Domains
 - All for Sites
 - All for Resources
@@ -85,7 +85,7 @@ spec:
     tag: latest
     replicas: 1
     logLevel: INFO    # DEBUG | INFO | WARN | ERROR
-    mtu: 1380         # WireGuard MTU (default: unset)
+    mtu: 1380         # WireGuard MTU (default: 1280)
     pingInterval: "60s"   # WireGuard keepalive interval (PING_INTERVAL env)
     pingTimeout: "5s"     # WireGuard ping timeout (PING_TIMEOUT env)
     interface: "newt"     # WireGuard interface name (INTERFACE env, default "newt")
@@ -295,7 +295,7 @@ metadata:
 spec:
   siteRef: homelab
   name: Cluster Pod Network
-  mode: cidr              # host | cidr | port
+  mode: cidr              # host | cidr
   destination: 10.42.0.0/16
   tcpPorts: "*"
   udpPorts: "*"
@@ -441,10 +441,10 @@ Then annotate resources with `myorg/site-ref`, `myorg/enabled`, etc.
 ```bash
 helm install pangolin-operator oci://ghcr.io/home-operations/charts/pangolin-operator \
   --namespace pangolin-operator --create-namespace \
-  --set env.PANGOLIN_API_URL=https://pangolin.example.com \
-  --set env.PANGOLIN_API_KEY=<key> \
-  --set env.PANGOLIN_ORG_ID=<org-id> \
-  --set env.PANGOLIN_ENDPOINT=https://pangolin.example.com
+  --set pangolin.apiUrl=https://pangolin.example.com \
+  --set pangolin.apiKey=<key> \
+  --set pangolin.orgId=<org-id> \
+  --set pangolin.endpoint=https://pangolin.example.com
 ```
 
 ### Flux CD example
@@ -473,12 +473,11 @@ spec:
     namespace: flux-system
   interval: 1h
   values:
-    env:
-      PANGOLIN_API_URL: https://pangolin.example.com
-      PANGOLIN_ORG_ID: <org-id>
-    envFrom:
-      - secretRef:
-          name: pangolin-operator-credentials   # keys: PANGOLIN_API_KEY, PANGOLIN_ENDPOINT
+    pangolin:
+      apiUrl: https://pangolin.example.com
+      endpoint: https://pangolin.example.com
+      orgId: <org-id>
+      existingSecret: pangolin-operator-credentials   # keys: PANGOLIN_API_URL, PANGOLIN_API_KEY, PANGOLIN_ORG_ID, PANGOLIN_ENDPOINT
 ```
 
 ## Quick start
