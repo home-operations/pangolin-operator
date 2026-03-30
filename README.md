@@ -274,10 +274,12 @@ Valid `action` values: `ACCEPT`, `DROP`, `PASS`. Valid `match` values: `ip`, `ci
 
 ### Cross-namespace site reference
 
+The operator resolves `NewtSite` by name across all namespaces using a field index,
+so only the site name is needed — no namespace field required.
+
 ```yaml
 spec:
   siteRef: homelab
-  siteNamespace: network   # defaults to PublicResource's own namespace
 ```
 
 ## PrivateResource

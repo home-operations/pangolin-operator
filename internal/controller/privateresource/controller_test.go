@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
+	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
 )
 
@@ -22,6 +23,16 @@ func newTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = pangolinv1alpha1.AddToScheme(s)
 	return s
+}
+
+func newTestClientBuilder(scheme *runtime.Scheme) *fake.ClientBuilder {
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithIndex(
+			&pangolinv1alpha1.NewtSite{},
+			ctrlresolve.IndexField,
+			func(obj client.Object) []string { return []string{obj.GetName()} },
+		)
 }
 
 func pangolinResponse(w http.ResponseWriter, data any) {
@@ -89,8 +100,7 @@ func TestReconcile_CreateSiteResource(t *testing.T) {
 	}
 
 	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	cl := newTestClientBuilder(scheme).
 		WithObjects(res, readySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
@@ -251,8 +261,7 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 	}
 
 	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	cl := newTestClientBuilder(scheme).
 		WithObjects(res, readySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
@@ -298,8 +307,7 @@ func TestCleanup_DeletesSiteResourceAndRemovesFinalizer(t *testing.T) {
 	}
 
 	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	cl := newTestClientBuilder(scheme).
 		WithObjects(res, readySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
@@ -350,8 +358,7 @@ func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {
 	}
 
 	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	cl := newTestClientBuilder(scheme).
 		WithObjects(res, readySite()).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
@@ -383,8 +390,7 @@ func TestReconcile_RequeuesWhenSiteNotReady(t *testing.T) {
 	}
 
 	scheme := newTestScheme()
-	cl := fake.NewClientBuilder().
-		WithScheme(scheme).
+	cl := newTestClientBuilder(scheme).
 		WithObjects(res, site).
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
