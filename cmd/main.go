@@ -83,8 +83,9 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics server")
 	flag.BoolVar(&enablePprof, "enable-pprof", false,
 		"If set, a pprof endpoint will be exposed on the pprof-bind-address for runtime profiling")
-	flag.StringVar(&pprofAddr, "pprof-bind-address", ":6060",
-		"The address the pprof endpoint binds to. Only used when --enable-pprof is set.")
+	flag.StringVar(&pprofAddr, "pprof-bind-address", "localhost:6060",
+		"The address the pprof endpoint binds to. Only used when --enable-pprof is set. "+
+			"Defaults to localhost to avoid exposing profiling data over the network.")
 	flag.StringVar(&logLevel, "log-level", "info",
 		"Log level for the controller (debug, info)")
 

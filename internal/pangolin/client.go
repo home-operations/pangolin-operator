@@ -124,18 +124,18 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, url, err)
+		return fmt.Errorf("%s request failed: %w", method, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Check for 404 before attempting to decode — the server may return an HTML page
 	// for missing resources rather than a JSON envelope.
 	if resp.StatusCode == http.StatusNotFound {
-		return &ErrNotFound{Message: fmt.Sprintf("not found: %s %s (HTTP 404)", method, url)}
+		return &ErrNotFound{Message: "not found (HTTP 404)"}
 	}
 
 	if resp.StatusCode == http.StatusConflict {
-		return &ErrConflict{Message: fmt.Sprintf("conflict: %s %s (HTTP 409)", method, url)}
+		return &ErrConflict{Message: "conflict (HTTP 409)"}
 	}
 
 	var envelope struct {
@@ -158,7 +158,7 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 	}
 	if out != nil && len(envelope.Data) > 0 {
 		if err := json.Unmarshal(envelope.Data, out); err != nil {
-			return fmt.Errorf("decode response data from %s %s: %w", method, url, err)
+			return fmt.Errorf("decode response data: %w", err)
 		}
 	}
 	return nil
