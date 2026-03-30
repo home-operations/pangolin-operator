@@ -186,6 +186,9 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
 			Namespace: site.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "pangolin-operator",
+			},
 		},
 		StringData: map[string]string{
 			"PANGOLIN_ENDPOINT": r.NewtEndpoint,
@@ -198,6 +201,10 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 	}
 
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
+		if secret.Labels == nil {
+			secret.Labels = make(map[string]string)
+		}
+		secret.Labels["app.kubernetes.io/managed-by"] = "pangolin-operator"
 		secret.StringData = map[string]string{
 			"PANGOLIN_ENDPOINT": r.NewtEndpoint,
 			"NEWT_ID":           defaults.NewtID,

@@ -15,6 +15,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -147,14 +148,15 @@ func main() {
 		Scheme:  scheme,
 		Metrics: metricsServerOptions,
 		Cache: cache.Options{
-			// Only cache the specific types our controllers use. Without this
-			// restriction controller-runtime creates informers for every type
-			// registered in the scheme, wasting significant memory.
 			ByObject: map[client.Object]cache.ByObject{
-				&appsv1.Deployment{}:                {},
-				&corev1.Secret{}:                    {},
-				&corev1.ServiceAccount{}:            {},
-				&corev1.Service{}:                   {},
+				&appsv1.Deployment{}:     {},
+				&corev1.ServiceAccount{}: {},
+				&corev1.Service{}:        {},
+				&corev1.Secret{}: {
+					Label: labels.SelectorFromSet(labels.Set{
+						"app.kubernetes.io/managed-by": "pangolin-operator",
+					}),
+				},
 				&gatewayv1.HTTPRoute{}:              {},
 				&pangolinv1alpha1.NewtSite{}:        {},
 				&pangolinv1alpha1.PublicResource{}:  {},
