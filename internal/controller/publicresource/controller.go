@@ -27,6 +27,7 @@ import (
 const (
 	PublicResourceFinalizer = "pangolin.home-operations.com/publicresource-finalizer"
 	resyncInterval          = 10 * time.Minute
+	reconcileTimeout        = 2 * time.Minute
 	protocolHTTP            = "http"
 )
 
@@ -52,7 +53,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if res.DeletionTimestamp != nil {
-		return r.cleanup(ctx, &res)
+		return ctrl.Result{}, r.cleanup(ctx, &res)
 	}
 
 	if !controllerutil.ContainsFinalizer(&res, PublicResourceFinalizer) {
@@ -60,7 +61,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, r.Update(ctx, &res)
 	}
 
-	return r.reconcile(ctx, &res)
+	reconcileCtx, cancel := context.WithTimeout(ctx, reconcileTimeout)
+	defer cancel()
+	return r.reconcile(reconcileCtx, &res)
 }
 
 func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.PublicResource) (ctrl.Result, error) {
@@ -209,7 +212,7 @@ func buildHTTPUpdateRequest(spec pangolinv1alpha1.PublicResourceSpec) pangolin.U
 		Ssl:         new(spec.Ssl),
 		Sso:         f,
 		BlockAccess: f,
-		Enabled:     spec.Enabled,
+		Enabled:     &spec.Enabled,
 		ApplyRules:  new(len(spec.Rules) > 0),
 	}
 	if spec.TlsServerName != "" {
@@ -330,9 +333,12 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 }
 
 func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.PublicResource, siteID int) error {
+	logger := log.FromContext(ctx)
+
 	// Always re-apply all settings on update — spec is the source of truth.
 	updateReq := pangolin.UpdateResourceRequest{
-		Name: res.Spec.Name,
+		Name:    res.Spec.Name,
+		Enabled: &res.Spec.Enabled,
 	}
 	if res.Spec.Protocol == protocolHTTP {
 		httpReq := buildHTTPUpdateRequest(res.Spec)
@@ -343,8 +349,11 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 		return fmt.Errorf("UpdateResource: %w", err)
 	}
 
-	// Create new targets/rules before deleting old ones to avoid dropping traffic.
+	// Create new before deleting old to avoid dropping traffic.
+	// Persist new IDs+hash before cleanup so a crash won't cause duplicates.
 	if hashTargets(res.Spec.Targets) != res.Status.TargetsHash {
+		oldTargetIDs := res.Status.TargetIDs
+
 		targetIDs, err := r.createTargets(ctx, res.Status.ResourceID, siteID, res.Spec.Targets)
 		if err != nil {
 			if len(targetIDs) > 0 {
@@ -354,24 +363,24 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 			}
 			return err
 		}
-		for _, id := range res.Status.TargetIDs {
-			if err := r.PangolinClient.DeleteTarget(ctx, id); err != nil && !pangolin.IsNotFound(err) {
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-					s.TargetIDs = targetIDs
-					s.TargetsHash = hashTargets(res.Spec.Targets)
-				})
-				return fmt.Errorf("DeleteTarget(%d): %w", id, err)
-			}
-		}
+
 		if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			s.TargetIDs = targetIDs
 			s.TargetsHash = hashTargets(res.Spec.Targets)
 		}); err != nil {
 			return err
 		}
+
+		for _, id := range oldTargetIDs {
+			if err := r.PangolinClient.DeleteTarget(ctx, id); err != nil && !pangolin.IsNotFound(err) {
+				logger.Error(err, "failed to delete old target", "targetID", id)
+			}
+		}
 	}
 
 	if hashRules(res.Spec.Rules) != res.Status.RulesHash {
+		oldRuleIDs := res.Status.RuleIDs
+
 		ruleIDs, err := r.createRules(ctx, res.Status.ResourceID, res.Spec.Rules)
 		if err != nil {
 			if len(ruleIDs) > 0 {
@@ -381,20 +390,18 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 			}
 			return err
 		}
-		for _, id := range res.Status.RuleIDs {
-			if err := r.PangolinClient.DeleteRule(ctx, res.Status.ResourceID, id); err != nil && !pangolin.IsNotFound(err) {
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-					s.RuleIDs = ruleIDs
-					s.RulesHash = hashRules(res.Spec.Rules)
-				})
-				return fmt.Errorf("DeleteRule(%d): %w", id, err)
-			}
-		}
+
 		if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			s.RuleIDs = ruleIDs
 			s.RulesHash = hashRules(res.Spec.Rules)
 		}); err != nil {
 			return err
+		}
+
+		for _, id := range oldRuleIDs {
+			if err := r.PangolinClient.DeleteRule(ctx, res.Status.ResourceID, id); err != nil && !pangolin.IsNotFound(err) {
+				logger.Error(err, "failed to delete old rule", "ruleID", id)
+			}
 		}
 	}
 
@@ -455,22 +462,22 @@ func hashRules(rules []pangolinv1alpha1.PublicRuleSpec) string {
 	return fmt.Sprintf("%x", sha256.Sum256(b))
 }
 
-func (r *Reconciler) cleanup(ctx context.Context, res *pangolinv1alpha1.PublicResource) (ctrl.Result, error) {
+func (r *Reconciler) cleanup(ctx context.Context, res *pangolinv1alpha1.PublicResource) error {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Cleaning up PublicResource", "name", res.Name)
 
 	if res.Status.ResourceID != 0 {
 		if err := r.PangolinClient.DeleteResource(ctx, res.Status.ResourceID); err != nil && !pangolin.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete Pangolin resource %d: %w", res.Status.ResourceID, err)
+			return fmt.Errorf("delete Pangolin resource %d: %w", res.Status.ResourceID, err)
 		}
 		logger.Info("Deleted Pangolin resource", "resourceID", res.Status.ResourceID)
 	}
 
 	controllerutil.RemoveFinalizer(res, PublicResourceFinalizer)
 	if err := r.Update(ctx, res); err != nil {
-		return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+		return fmt.Errorf("remove finalizer: %w", err)
 	}
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *Reconciler) patchStatus(ctx context.Context, res *pangolinv1alpha1.PublicResource, mutate func(*pangolinv1alpha1.PublicResourceStatus)) error {

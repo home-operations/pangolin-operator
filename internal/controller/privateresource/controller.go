@@ -24,6 +24,7 @@ import (
 const (
 	PrivateResourceFinalizer = "pangolin.home-operations.com/privateresource-finalizer"
 	resyncInterval           = 10 * time.Minute
+	reconcileTimeout         = 2 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=privateresources,verbs=get;list;watch;create;update;patch;delete
@@ -48,7 +49,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if res.DeletionTimestamp != nil {
-		return r.cleanup(ctx, &res)
+		return ctrl.Result{}, r.cleanup(ctx, &res)
 	}
 
 	if !controllerutil.ContainsFinalizer(&res, PrivateResourceFinalizer) {
@@ -56,7 +57,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, r.Update(ctx, &res)
 	}
 
-	return r.reconcile(ctx, &res)
+	reconcileCtx, cancel := context.WithTimeout(ctx, reconcileTimeout)
+	defer cancel()
+	return r.reconcile(reconcileCtx, &res)
 }
 
 func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.PrivateResource) (ctrl.Result, error) {
@@ -245,22 +248,22 @@ func (r *Reconciler) updateSiteResource(ctx context.Context, res *pangolinv1alph
 	return nil
 }
 
-func (r *Reconciler) cleanup(ctx context.Context, res *pangolinv1alpha1.PrivateResource) (ctrl.Result, error) {
+func (r *Reconciler) cleanup(ctx context.Context, res *pangolinv1alpha1.PrivateResource) error {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Cleaning up PrivateResource", "name", res.Name)
 
 	if res.Status.SiteResourceID != 0 {
 		if err := r.PangolinClient.DeleteSiteResource(ctx, res.Status.SiteResourceID); err != nil && !pangolin.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete Pangolin site resource %d: %w", res.Status.SiteResourceID, err)
+			return fmt.Errorf("delete Pangolin site resource %d: %w", res.Status.SiteResourceID, err)
 		}
 		logger.Info("Deleted Pangolin site resource", "siteResourceID", res.Status.SiteResourceID)
 	}
 
 	controllerutil.RemoveFinalizer(res, PrivateResourceFinalizer)
 	if err := r.Update(ctx, res); err != nil {
-		return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+		return fmt.Errorf("remove finalizer: %w", err)
 	}
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *Reconciler) patchStatus(ctx context.Context, res *pangolinv1alpha1.PrivateResource, mutate func(*pangolinv1alpha1.PrivateResourceStatus)) error {
