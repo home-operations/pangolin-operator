@@ -1,0 +1,130 @@
+---
+suite: service monitor
+templates:
+  - servicemonitor.tpl
+tests:
+  - it: should not create a ServiceMonitor by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create a ServiceMonitor when enabled
+    set:
+      monitoring.serviceMonitor.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ServiceMonitor
+      - isAPIVersion:
+          of: monitoring.coreos.com/v1
+
+  - it: should set the correct name
+    release:
+      name: my-release
+    set:
+      monitoring.serviceMonitor.enabled: true
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-release-pangolin-operator
+
+  - it: should set namespace
+    release:
+      namespace: pangolin-system
+    set:
+      monitoring.serviceMonitor.enabled: true
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: pangolin-system
+
+  - it: should include selector labels
+    release:
+      name: my-release
+    set:
+      monitoring.serviceMonitor.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: pangolin-operator
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: my-release
+
+  - it: should set default scrape parameters
+    set:
+      monitoring.serviceMonitor.enabled: true
+    asserts:
+      - equal:
+          path: spec.endpoints[0].port
+          value: metrics
+      - equal:
+          path: spec.endpoints[0].interval
+          value: 30s
+      - equal:
+          path: spec.endpoints[0].scrapeTimeout
+          value: 10s
+      - equal:
+          path: spec.endpoints[0].path
+          value: /metrics
+
+  - it: should set custom scrape parameters
+    set:
+      monitoring.serviceMonitor.enabled: true
+      monitoring.serviceMonitor.interval: 15s
+      monitoring.serviceMonitor.scrapeTimeout: 5s
+      monitoring.serviceMonitor.path: /custom-metrics
+    asserts:
+      - equal:
+          path: spec.endpoints[0].interval
+          value: 15s
+      - equal:
+          path: spec.endpoints[0].scrapeTimeout
+          value: 5s
+      - equal:
+          path: spec.endpoints[0].path
+          value: /custom-metrics
+
+  - it: should set custom labels
+    set:
+      monitoring.serviceMonitor.enabled: true
+      monitoring.serviceMonitor.labels:
+        prometheus: kube-prometheus
+    asserts:
+      - equal:
+          path: metadata.labels["prometheus"]
+          value: kube-prometheus
+
+  - it: should set annotations
+    set:
+      monitoring.serviceMonitor.enabled: true
+      monitoring.serviceMonitor.annotations:
+        custom/annotation: value
+    asserts:
+      - equal:
+          path: metadata.annotations["custom/annotation"]
+          value: value
+
+  - it: should set metric relabelings
+    set:
+      monitoring.serviceMonitor.enabled: true
+      monitoring.serviceMonitor.metricRelabelings:
+        - sourceLabels:
+            - __name__
+          regex: "tuppr_(.*)"
+          targetLabel: __name__
+          replacement: "controller_${1}"
+    asserts:
+      - exists:
+          path: spec.endpoints[0].metricRelabelings
+
+  - it: should set target labels
+    set:
+      monitoring.serviceMonitor.enabled: true
+      monitoring.serviceMonitor.targetLabels:
+        - app
+    asserts:
+      - equal:
+          path: spec.targetLabels[0]
+          value: app

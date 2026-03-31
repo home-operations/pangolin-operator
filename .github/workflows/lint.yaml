@@ -30,3 +30,8 @@ jobs:
 
       - name: Helm lint
         run: helm lint charts/pangolin-operator
+
+      - name: Helm unittest
+        run: |-
+          helm plugin install https://github.com/helm-unittest/helm-unittest.git --verify=false
+          helm unittest charts/pangolin-operator

@@ -1,0 +1,80 @@
+---
+suite: service
+templates:
+  - service.tpl
+tests:
+  - it: should create a metrics service by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Service
+
+  - it: should not create a service when metrics are disabled
+    set:
+      controller.metrics.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should set the correct name
+    release:
+      name: my-release
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-release-pangolin-operator-metrics-service
+
+  - it: should set namespace
+    release:
+      namespace: pangolin-system
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: pangolin-system
+
+  - it: should be a ClusterIP service
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+
+  - it: should expose the metrics port
+    asserts:
+      - equal:
+          path: spec.ports[0].name
+          value: metrics
+      - equal:
+          path: spec.ports[0].port
+          value: 8080
+      - equal:
+          path: spec.ports[0].targetPort
+          value: metrics
+
+  - it: should use a custom metrics port
+    set:
+      controller.metrics.port: 9090
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 9090
+
+  - it: should include selector labels
+    release:
+      name: my-release
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: pangolin-operator
+      - equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: my-release
+
+  - it: should set annotations when provided
+    set:
+      controller.metrics.annotations:
+        prometheus.io/scrape: "true"
+    asserts:
+      - equal:
+          path: metadata.annotations["prometheus.io/scrape"]
+          value: "true"

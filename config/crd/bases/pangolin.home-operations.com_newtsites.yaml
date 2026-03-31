@@ -6605,7 +6605,6 @@ spec:
                     default: 1
                     description: Replicas for the Deployment
                     format: int32
-                    maximum: 1
                     minimum: 0
                     type: integer
                   resources:

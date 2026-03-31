@@ -1,0 +1,158 @@
+---
+suite: rbac
+templates:
+  - rbac.tpl
+tests:
+  - it: should create RBAC resources by default
+    asserts:
+      - hasDocuments:
+          count: 4
+
+  - it: should not create RBAC resources when disabled
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create a ClusterRole
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - isAPIVersion:
+          of: rbac.authorization.k8s.io/v1
+
+  - it: should set ClusterRole name
+    release:
+      name: my-release
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-release-pangolin-operator-manager-role
+
+  - it: should include required RBAC rules for CRDs
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - pangolin.home-operations.com
+            resources:
+              - newtsites
+              - publicresources
+              - privateresources
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should include RBAC rules for finalizers
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - pangolin.home-operations.com
+            resources:
+              - newtsites/finalizers
+              - publicresources/finalizers
+              - privateresources/finalizers
+            verbs:
+              - update
+
+  - it: should include RBAC rules for status
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - pangolin.home-operations.com
+            resources:
+              - newtsites/status
+              - publicresources/status
+              - privateresources/status
+            verbs:
+              - get
+              - patch
+              - update
+
+  - it: should create a ClusterRoleBinding
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+
+  - it: should bind to the correct ClusterRole
+    release:
+      name: my-release
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: roleRef.name
+          value: my-release-pangolin-operator-manager-role
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+
+  - it: should bind to the correct ServiceAccount
+    release:
+      name: my-release
+      namespace: pangolin-system
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: my-release-pangolin-operator
+      - equal:
+          path: subjects[0].namespace
+          value: pangolin-system
+
+  - it: should create leader election Role when enabled
+    documentIndex: 2
+    asserts:
+      - isKind:
+          of: Role
+
+  - it: should create leader election RoleBinding when enabled
+    documentIndex: 3
+    asserts:
+      - isKind:
+          of: RoleBinding
+
+  - it: should not create leader election resources when disabled
+    set:
+      controller.leaderElection.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: should include lease permissions in leader election Role
+    documentIndex: 2
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - coordination.k8s.io
+            resources:
+              - leases
+            verbs:
+              - get
+              - list
+              - watch
+              - create
+              - update
+              - patch
+              - delete

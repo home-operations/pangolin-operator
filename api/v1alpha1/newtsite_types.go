@@ -45,7 +45,6 @@ type NewtSpec struct {
 	// Replicas for the Deployment
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=1
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 	// LogLevel for the newt container
