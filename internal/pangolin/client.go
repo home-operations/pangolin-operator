@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/home-operations/pangolin-operator/internal/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Credentials holds the connection details parsed from a Kubernetes Secret
@@ -187,6 +188,8 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 		return fmt.Errorf("pangolin API error (HTTP %d, status %d): %s",
 			resp.StatusCode, envelope.Status, envelope.Message)
 	}
+	logger := log.FromContext(ctx)
+	logger.V(1).Info("Pangolin API response", "method", method, "url", url, "status", resp.StatusCode, "data", string(envelope.Data))
 	if out != nil && len(envelope.Data) > 0 {
 		if err := json.Unmarshal(envelope.Data, out); err != nil {
 			return fmt.Errorf("decode response data: %w", err)
