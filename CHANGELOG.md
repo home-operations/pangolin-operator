@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.5](https://github.com/home-operations/pangolin-operator/compare/0.0.4...0.0.5) (2026-03-31)
+
+
+### Features
+
+* add generation change predicate ([cfcf55e](https://github.com/home-operations/pangolin-operator/commit/cfcf55e2a1c488a02ae49c4cc7289a3d739756fb))
+* **crd:** make all resources cluster-scoped ([9b17c4c](https://github.com/home-operations/pangolin-operator/commit/9b17c4c7ccf332b981fb5aa6369617af63e3f10f))
+
+
+### Bug Fixes
+
+* **ci:** fix ci failing ([a0f6974](https://github.com/home-operations/pangolin-operator/commit/a0f6974ab7a4d3e1bb80d2b99ad6a56d746a173f))
+* **ci:** setup helm ([5bb7b18](https://github.com/home-operations/pangolin-operator/commit/5bb7b182963275c17d0bde9912ebabe5ec641afa))
+* ensure enabled to be used ([182f736](https://github.com/home-operations/pangolin-operator/commit/182f7368564f5c7a8776032729387f0fdef35726))
+* fix reconciliation logic ([9ffe373](https://github.com/home-operations/pangolin-operator/commit/9ffe373db251d2692464bc8fb73b4ec67c429a86))
+* handle better stale resources ([92a6b22](https://github.com/home-operations/pangolin-operator/commit/92a6b2274e98bdd161e60a625c1bd9e3e46dbf2f))
+* handle correctly drift ([99f9bef](https://github.com/home-operations/pangolin-operator/commit/99f9befbc7eee21c1d7e8f12b25c562cde9b1c16))
+* handle multipages ([fccc0dc](https://github.com/home-operations/pangolin-operator/commit/fccc0dcfa4bc2b82507cb71284eeb260e1be070a))
+* keep the resources Namespaced ([448ad15](https://github.com/home-operations/pangolin-operator/commit/448ad15b066ee32d767907c67bb0201ea9b06b70))
+* **reconcile:** adopt-or-create pattern to prevent duplicate resources ([c8d9574](https://github.com/home-operations/pangolin-operator/commit/c8d9574dde6dcca6dc28a86e120ecb902a8e1965))
+
+
+### Miscellaneous Chores
+
+* cleanup code ([b30cdd0](https://github.com/home-operations/pangolin-operator/commit/b30cdd05b11ed796adb8c31b6163e0f85b3173d5))
+
 ## [0.0.4](https://github.com/home-operations/pangolin-operator/compare/0.0.3...0.0.4) (2026-03-31)
 
 
