@@ -23,6 +23,8 @@ var (
 	)
 )
 
+const defaultPhase = "Pending"
+
 type ResourceCollector struct {
 	client client.Reader
 }
@@ -56,7 +58,7 @@ func (c *ResourceCollector) collectNewtSites(ctx context.Context, ch chan<- prom
 		site := &list.Items[i]
 		phase := string(site.Status.Phase)
 		if phase == "" {
-			phase = "Pending"
+			phase = defaultPhase
 		}
 		counts[phase]++
 
@@ -81,7 +83,7 @@ func (c *ResourceCollector) collectPublicResources(ctx context.Context, ch chan<
 	for i := range list.Items {
 		phase := string(list.Items[i].Status.Phase)
 		if phase == "" {
-			phase = "Pending"
+			phase = defaultPhase
 		}
 		counts[phase]++
 	}
@@ -100,7 +102,7 @@ func (c *ResourceCollector) collectPrivateResources(ctx context.Context, ch chan
 	for i := range list.Items {
 		phase := string(list.Items[i].Status.Phase)
 		if phase == "" {
-			phase = "Pending"
+			phase = defaultPhase
 		}
 		counts[phase]++
 	}

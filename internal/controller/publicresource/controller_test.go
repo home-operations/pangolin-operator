@@ -515,8 +515,8 @@ func TestReconcile_DriftDetection_ResetsResourceIDOn404(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !result.Requeue {
-		t.Error("expected Requeue=true after drift detection")
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter to be set after drift detection")
 	}
 
 	var updated pangolinv1alpha1.PublicResource

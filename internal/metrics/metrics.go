@@ -8,7 +8,12 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-const namespace = "pangolin"
+const (
+	namespace       = "pangolin"
+	endpointTarget  = "target"
+	endpointRule    = "rule"
+	endpointUnknown = "unknown"
+)
 
 var (
 	APIRequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -33,7 +38,7 @@ func init() {
 func ClassifyEndpoint(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "unknown"
+		return endpointUnknown
 	}
 
 	path := strings.TrimPrefix(u.Path, "/v1/")
@@ -55,22 +60,22 @@ func ClassifyEndpoint(rawURL string) string {
 	case "resource":
 		if len(segments) >= 3 {
 			switch segments[2] {
-			case "target":
-				return "target"
-			case "rule":
-				return "rule"
+			case endpointTarget:
+				return endpointTarget
+			case endpointRule:
+				return endpointRule
 			}
 		}
 		return "resource"
-	case "target":
-		return "target"
-	case "rule":
-		return "rule"
+	case endpointTarget:
+		return endpointTarget
+	case endpointRule:
+		return endpointRule
 	case "site-resource":
 		return "site_resource"
 	case "domains":
 		return "domain"
 	default:
-		return "unknown"
+		return endpointUnknown
 	}
 }

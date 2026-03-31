@@ -104,7 +104,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 				}); patchErr != nil {
 					return ctrl.Result{}, patchErr
 				}
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), site.Generation)
@@ -123,12 +123,11 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 				}); patchErr != nil {
 					return ctrl.Result{}, patchErr
 				}
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("drift check GetSite: %w", err)
 		}
 	}
-
 
 	online := false
 	if site.Spec.Type != "local" {
