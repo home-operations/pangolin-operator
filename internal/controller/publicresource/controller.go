@@ -126,8 +126,8 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 			return ctrl.Result{}, err
 		}
 	} else if res.Status.ResourceID != 0 {
-		// Steady-state drift check — update path already calls GetResource.
-		if _, err := r.PangolinClient.GetResource(ctx, res.Status.ResourceID); err != nil {
+		// Steady-state drift check — use niceId to verify the resource still exists.
+		if _, err := r.PangolinClient.GetResourceByNiceID(ctx, res.Status.NiceID); err != nil {
 			if pangolin.IsNotFound(err) {
 				logger.Info("Pangolin resource no longer exists, resetting for re-creation", "resourceID", res.Status.ResourceID)
 				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
@@ -141,7 +141,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 				}
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
-			return ctrl.Result{}, fmt.Errorf("drift check GetResource: %w", err)
+			return ctrl.Result{}, fmt.Errorf("drift check GetResourceByNiceID: %w", err)
 		}
 	}
 
@@ -285,19 +285,13 @@ func buildHTTPUpdateRequest(spec pangolinv1alpha1.PublicResourceSpec) pangolin.U
 }
 
 func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.PublicResource, siteID int) error {
-	live, err := r.PangolinClient.GetResource(ctx, res.Status.ResourceID)
-	if err != nil {
-		return fmt.Errorf("GetResource: %w", err)
-	}
-
 	// Always re-apply all settings on update — spec is the source of truth.
-	updateReq := pangolin.UpdateResourceRequest{}
-	if live.Name != res.Spec.Name {
-		updateReq.Name = res.Spec.Name
+	updateReq := pangolin.UpdateResourceRequest{
+		Name: res.Spec.Name,
 	}
 	if res.Spec.Protocol == "http" {
 		httpReq := buildHTTPUpdateRequest(res.Spec)
-		httpReq.Name = updateReq.Name
+		httpReq.Name = res.Spec.Name
 		updateReq = httpReq
 	}
 	if err := r.PangolinClient.UpdateResource(ctx, res.Status.ResourceID, updateReq); err != nil {
@@ -343,7 +337,7 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 			return err
 		}
 		for _, id := range res.Status.RuleIDs {
-			if err := r.PangolinClient.DeleteRule(ctx, id); err != nil && !pangolin.IsNotFound(err) {
+			if err := r.PangolinClient.DeleteRule(ctx, res.Status.ResourceID, id); err != nil && !pangolin.IsNotFound(err) {
 				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 					s.RuleIDs = ruleIDs
 					s.RulesHash = hashRules(res.Spec.Rules)

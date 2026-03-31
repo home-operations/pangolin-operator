@@ -238,11 +238,11 @@ func TestCreateResource(t *testing.T) {
 	}
 }
 
-func TestGetResource(t *testing.T) {
+func TestGetResourceByNiceID(t *testing.T) {
 	want := GetResourceResponse{ResourceID: 7, Name: "my-resource", FullDomain: "app.example.com"}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/test-org/resource/my-resource-nice", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
@@ -250,7 +250,7 @@ func TestGetResource(t *testing.T) {
 	})
 
 	c := newTestClient(t, mux)
-	got, err := c.GetResource(context.Background(), 7)
+	got, err := c.GetResourceByNiceID(context.Background(), "my-resource-nice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,11 +380,11 @@ func TestCreateSiteResource(t *testing.T) {
 	}
 }
 
-func TestGetSiteResource(t *testing.T) {
-	want := GetSiteResourceResponse{SiteResourceID: 55, Name: "priv-res", Mode: "host"}
+func TestGetSiteResourceByNiceID(t *testing.T) {
+	want := SiteResourceItem{SiteResourceID: 55, Name: "priv-res", Mode: "host"}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/test-org/site/1/resource/nice/priv-res-nice", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
@@ -392,7 +392,7 @@ func TestGetSiteResource(t *testing.T) {
 	})
 
 	c := newTestClient(t, mux)
-	got, err := c.GetSiteResource(context.Background(), 55)
+	got, err := c.GetSiteResourceByNiceID(context.Background(), 1, "priv-res-nice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestCreateRule(t *testing.T) {
 
 func TestDeleteRule(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/rule/33", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/resource/10/rule/33", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
 			t.Errorf("expected DELETE, got %s", r.Method)
 		}
@@ -566,7 +566,7 @@ func TestDeleteRule(t *testing.T) {
 	})
 
 	c := newTestClient(t, mux)
-	if err := c.DeleteRule(context.Background(), 33); err != nil {
+	if err := c.DeleteRule(context.Background(), 10, 33); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

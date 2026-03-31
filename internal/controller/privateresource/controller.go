@@ -114,8 +114,8 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 			return ctrl.Result{}, err
 		}
 	} else if res.Status.SiteResourceID != 0 {
-		// Steady-state drift check — update path already handles 404.
-		if _, err := r.PangolinClient.GetSiteResource(ctx, res.Status.SiteResourceID); err != nil {
+		// Steady-state drift check
+		if _, err := r.PangolinClient.GetSiteResourceByNiceID(ctx, site.Status.SiteID, res.Status.NiceID); err != nil {
 			if pangolin.IsNotFound(err) {
 				logger.Info("Pangolin site resource no longer exists, resetting for re-creation", "siteResourceID", res.Status.SiteResourceID)
 				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
@@ -126,7 +126,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 				}
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
-			return ctrl.Result{}, fmt.Errorf("drift check GetSiteResource: %w", err)
+			return ctrl.Result{}, fmt.Errorf("drift check GetSiteResourceByNiceID: %w", err)
 		}
 	}
 

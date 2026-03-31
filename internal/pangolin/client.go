@@ -70,7 +70,7 @@ type API interface {
 
 	// Public resources
 	CreateResource(ctx context.Context, req CreateResourceRequest) (*CreateResourceResponse, error)
-	GetResource(ctx context.Context, resourceID int) (*GetResourceResponse, error)
+	GetResourceByNiceID(ctx context.Context, niceID string) (*GetResourceResponse, error)
 	UpdateResource(ctx context.Context, resourceID int, req UpdateResourceRequest) error
 	DeleteResource(ctx context.Context, resourceID int) error
 
@@ -80,11 +80,11 @@ type API interface {
 
 	// Rules
 	CreateRule(ctx context.Context, resourceID int, req CreateRuleRequest) (*CreateRuleResponse, error)
-	DeleteRule(ctx context.Context, ruleID int) error
+	DeleteRule(ctx context.Context, resourceID, ruleID int) error
 
 	// Private (VPN) resources
 	CreateSiteResource(ctx context.Context, req CreateSiteResourceRequest) (*CreateSiteResourceResponse, error)
-	GetSiteResource(ctx context.Context, siteResourceID int) (*GetSiteResourceResponse, error)
+	GetSiteResourceByNiceID(ctx context.Context, siteID int, niceID string) (*SiteResourceItem, error)
 	UpdateSiteResource(ctx context.Context, siteResourceID int, req UpdateSiteResourceRequest) error
 	DeleteSiteResource(ctx context.Context, siteResourceID int) error
 }
@@ -340,11 +340,11 @@ type GetResourceResponse struct {
 	Enabled    bool   `json:"enabled"`
 }
 
-func (c *Client) GetResource(ctx context.Context, resourceID int) (*GetResourceResponse, error) {
-	url := fmt.Sprintf("%s/resource/%d", c.apiBase(), resourceID)
+func (c *Client) GetResourceByNiceID(ctx context.Context, niceID string) (*GetResourceResponse, error) {
+	url := fmt.Sprintf("%s/org/%s/resource/%s", c.apiBase(), c.orgID, niceID)
 	var out GetResourceResponse
 	if err := c.do(ctx, http.MethodGet, url, nil, &out); err != nil {
-		return nil, fmt.Errorf("GetResource(%d): %w", resourceID, err)
+		return nil, fmt.Errorf("GetResourceByNiceID(%s): %w", niceID, err)
 	}
 	return &out, nil
 }
@@ -401,8 +401,8 @@ func (c *Client) CreateRule(ctx context.Context, resourceID int, req CreateRuleR
 	return &out, nil
 }
 
-func (c *Client) DeleteRule(ctx context.Context, ruleID int) error {
-	url := fmt.Sprintf("%s/rule/%d", c.apiBase(), ruleID)
+func (c *Client) DeleteRule(ctx context.Context, resourceID, ruleID int) error {
+	url := fmt.Sprintf("%s/resource/%d/rule/%d", c.apiBase(), resourceID, ruleID)
 	if err := c.do(ctx, http.MethodDelete, url, nil, nil); err != nil {
 		return fmt.Errorf("DeleteRule(%d): %w", ruleID, err)
 	}
@@ -471,7 +471,7 @@ func (c *Client) CreateSiteResource(ctx context.Context, req CreateSiteResourceR
 	return &out, nil
 }
 
-type GetSiteResourceResponse struct {
+type SiteResourceItem struct {
 	SiteResourceID int    `json:"siteResourceId"`
 	SiteID         int    `json:"siteId"`
 	NiceID         string `json:"niceId"`
@@ -481,11 +481,11 @@ type GetSiteResourceResponse struct {
 	Enabled        bool   `json:"enabled"`
 }
 
-func (c *Client) GetSiteResource(ctx context.Context, siteResourceID int) (*GetSiteResourceResponse, error) {
-	url := fmt.Sprintf("%s/site-resource/%d", c.apiBase(), siteResourceID)
-	var out GetSiteResourceResponse
+func (c *Client) GetSiteResourceByNiceID(ctx context.Context, siteID int, niceID string) (*SiteResourceItem, error) {
+	url := fmt.Sprintf("%s/org/%s/site/%d/resource/nice/%s", c.apiBase(), c.orgID, siteID, niceID)
+	var out SiteResourceItem
 	if err := c.do(ctx, http.MethodGet, url, nil, &out); err != nil {
-		return nil, fmt.Errorf("GetSiteResource(%d): %w", siteResourceID, err)
+		return nil, fmt.Errorf("GetSiteResourceByNiceID(%s): %w", niceID, err)
 	}
 	return &out, nil
 }

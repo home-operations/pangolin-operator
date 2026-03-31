@@ -87,15 +87,7 @@ func TestUpdateSiteResource_CallsAPIWhenNameDiffers(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			testutil.PangolinResponse(t, w, pangolin.GetSiteResourceResponse{
-				SiteResourceID: 55,
-				Name:           "old-name",
-				Mode:           "host",
-				Destination:    "10.0.0.5",
-			})
-		case http.MethodPost:
+		if r.Method == http.MethodPost {
 			updateCalled = true
 			var req pangolin.UpdateSiteResourceRequest
 			_ = json.NewDecoder(r.Body).Decode(&req)
@@ -186,15 +178,7 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			testutil.PangolinResponse(t, w, pangolin.GetSiteResourceResponse{
-				SiteResourceID: 55,
-				Name:           "old-name",
-				Mode:           "host",
-				Destination:    "10.0.0.5",
-			})
-		case http.MethodPost:
+		if r.Method == http.MethodPost {
 			updateCalled = true
 			testutil.PangolinResponse(t, w, nil)
 		}
@@ -245,7 +229,7 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 // site resource no longer exists, SiteResourceID is reset and reconcile requeues for re-creation.
 func TestReconcile_DriftDetection_ResetsSiteResourceIDOn404(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/org1/site/1/resource/nice/sres-55", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -270,6 +254,7 @@ func TestReconcile_DriftDetection_ResetsSiteResourceIDOn404(t *testing.T) {
 		},
 		Status: pangolinv1alpha1.PrivateResourceStatus{
 			SiteResourceID:     55,
+			NiceID:             "sres-55",
 			ObservedGeneration: 1, // steady state
 		},
 	}
@@ -305,10 +290,10 @@ func TestReconcile_DriftDetection_ResetsSiteResourceIDOn404(t *testing.T) {
 // a RequeueAfter interval for periodic re-sync.
 func TestReconcile_PeriodicResync(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/org1/site/1/resource/nice/sres-55", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			testutil.PangolinResponse(t, w, pangolin.GetSiteResourceResponse{
-				SiteResourceID: 55, Name: "my-priv", Mode: "host", Destination: "10.0.0.5",
+			testutil.PangolinResponse(t, w, pangolin.SiteResourceItem{
+				SiteResourceID: 55, NiceID: "sres-55", Name: "my-priv", Mode: "host", Destination: "10.0.0.5",
 			})
 		}
 	})
@@ -331,6 +316,7 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 		},
 		Status: pangolinv1alpha1.PrivateResourceStatus{
 			SiteResourceID:     55,
+			NiceID:             "sres-55",
 			ObservedGeneration: 1,
 		},
 	}
