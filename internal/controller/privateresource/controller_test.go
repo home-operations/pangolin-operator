@@ -23,6 +23,9 @@ func TestReconcile_CreateSiteResource(t *testing.T) {
 	createCalled := false
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
+	})
 	mux.HandleFunc("/v1/org/org1/site-resource", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Errorf("expected PUT, got %s", r.Method)
@@ -177,6 +180,13 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 	updateCalled := false
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{
+			"siteResources": []pangolin.SiteResourceItem{
+				{SiteResourceID: 55, Name: "new-name", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+			},
+		})
+	})
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			updateCalled = true
@@ -225,15 +235,20 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 	}
 }
 
-// TestReconcile_DriftDetection_ResetsSiteResourceIDWhenNotInList verifies that when the Pangolin
-// site resource no longer exists in the list, SiteResourceID is reset and reconcile requeues for re-creation.
-func TestReconcile_DriftDetection_ResetsSiteResourceIDWhenNotInList(t *testing.T) {
+// TestReconcile_DriftDetection_RecreatesWhenNotInList verifies that when the Pangolin
+// site resource no longer exists in the list, a new resource is created via ensureExists.
+func TestReconcile_DriftDetection_RecreatesWhenNotInList(t *testing.T) {
+	createCalled := false
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			// Return an empty list — site resource 55 is not present.
 			testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
 		}
+	})
+	mux.HandleFunc("/v1/org/org1/site-resource", func(w http.ResponseWriter, r *http.Request) {
+		createCalled = true
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 99, NiceID: "sres-99"})
 	})
 
 	srv := httptest.NewServer(mux)
@@ -267,22 +282,22 @@ func TestReconcile_DriftDetection_ResetsSiteResourceIDWhenNotInList(t *testing.T
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-priv", Namespace: "default"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected RequeueAfter to be set after drift detection")
+	if !createCalled {
+		t.Error("expected CreateSiteResource to be called when resource is missing from list")
 	}
 
 	var updated pangolinv1alpha1.PrivateResource
 	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-priv", Namespace: "default"}, &updated); err != nil {
 		t.Fatalf("failed to get resource: %v", err)
 	}
-	if updated.Status.SiteResourceID != 0 {
-		t.Errorf("expected SiteResourceID to be reset to 0, got %d", updated.Status.SiteResourceID)
+	if updated.Status.SiteResourceID != 99 {
+		t.Errorf("expected SiteResourceID to be 99 after re-creation, got %d", updated.Status.SiteResourceID)
 	}
 }
 

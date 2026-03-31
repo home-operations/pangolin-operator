@@ -81,62 +81,37 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	if res.Status.SiteResourceID == 0 {
-		if err := r.createSiteResource(ctx, res, site.Status.SiteID); err != nil {
-			if pangolin.IsBadRequest(err) {
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
-					s.Phase = pangolinv1alpha1.PrivateResourcePhaseError
-					setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
-				})
-				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
-			}
+	if err := r.ensureExists(ctx, res, site.Status.SiteID); err != nil {
+		if pangolin.IsBadRequest(err) {
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
-				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+				s.Phase = pangolinv1alpha1.PrivateResourcePhaseError
+				setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
 			})
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else if res.Generation != res.Status.ObservedGeneration {
+		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+			setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+		})
+		return ctrl.Result{}, err
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if res.Generation != res.Status.ObservedGeneration {
 		if err := r.updateSiteResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
-				logger.Info("Pangolin site resource no longer exists, will re-create", "siteResourceID", res.Status.SiteResourceID)
-				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+				logger.Info("Pangolin site resource no longer exists during update, will retry", "siteResourceID", res.Status.SiteResourceID)
+				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 					s.SiteResourceID = 0
 					s.NiceID = ""
-				}); patchErr != nil {
-					return ctrl.Result{}, patchErr
-				}
-				return ctrl.Result{RequeueAfter: time.Second}, nil
+				})
+				return ctrl.Result{Requeue: true}, nil
 			}
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
 			})
 			return ctrl.Result{}, err
-		}
-	} else if res.Status.SiteResourceID != 0 {
-		// Steady-state drift check — verify the resource still exists via list.
-		siteResources, err := r.PangolinClient.ListSiteResources(ctx, res.Spec.Name)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("drift check ListSiteResources: %w", err)
-		}
-		found := false
-		for _, sr := range siteResources {
-			if sr.SiteResourceID == res.Status.SiteResourceID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			logger.Info("Pangolin site resource no longer exists, resetting for re-creation", "siteResourceID", res.Status.SiteResourceID)
-			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
-				s.SiteResourceID = 0
-				s.NiceID = ""
-			}); patchErr != nil {
-				return ctrl.Result{}, patchErr
-			}
-			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 	}
 
@@ -150,6 +125,49 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 
 	logger.V(1).Info("PrivateResource reconciled", "siteResourceID", res.Status.SiteResourceID)
 	return ctrl.Result{RequeueAfter: resyncInterval}, nil
+}
+
+// ensureExists verifies that the Pangolin site resource exists, adopting an
+// existing one or creating a new one as needed.
+func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
+	logger := log.FromContext(ctx)
+
+	items, err := r.PangolinClient.ListSiteResources(ctx, res.Spec.Name)
+	if err != nil {
+		return fmt.Errorf("ListSiteResources: %w", err)
+	}
+
+	match := findSiteResource(items, res.Spec, siteID)
+
+	if res.Status.SiteResourceID != 0 {
+		for _, item := range items {
+			if item.SiteResourceID == res.Status.SiteResourceID {
+				return nil // Still exists, nothing to do.
+			}
+		}
+		logger.Info("Pangolin site resource no longer exists", "siteResourceID", res.Status.SiteResourceID)
+	}
+
+	if match != nil {
+		logger.Info("Adopting existing Pangolin site resource", "siteResourceID", match.SiteResourceID)
+		return r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+			s.SiteResourceID = match.SiteResourceID
+			s.NiceID = match.NiceID
+			s.Phase = pangolinv1alpha1.PrivateResourcePhaseCreating
+		})
+	}
+
+	return r.createSiteResource(ctx, res, siteID)
+}
+
+// findSiteResource returns the first item matching by Name + Destination + Mode + SiteID.
+func findSiteResource(items []pangolin.SiteResourceItem, spec pangolinv1alpha1.PrivateResourceSpec, siteID int) *pangolin.SiteResourceItem {
+	for i, item := range items {
+		if item.Name == spec.Name && item.Destination == spec.Destination && item.Mode == spec.Mode && item.SiteID == siteID {
+			return &items[i]
+		}
+	}
+	return nil
 }
 
 // orEmpty returns s if non-nil, otherwise an empty slice of the same type.

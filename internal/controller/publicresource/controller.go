@@ -27,6 +27,7 @@ import (
 const (
 	PublicResourceFinalizer = "pangolin.home-operations.com/publicresource-finalizer"
 	resyncInterval          = 10 * time.Minute
+	protocolHTTP            = "http"
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=publicresources,verbs=get;list;watch;create;update;patch;delete
@@ -84,74 +85,49 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	if res.Status.ResourceID == 0 {
-		if err := r.createResource(ctx, res, site.Status.SiteID); err != nil {
-			if pangolin.IsConflict(err) {
-				logger.Info("Pangolin resource already exists with that domain; manual intervention required", "error", err)
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-					setCondition(s, metav1.ConditionFalse, reasonPending,
-						"a resource with that domain already exists in Pangolin; delete it from Pangolin or change spec.fullDomain to resolve",
-						res.Generation)
-				})
-				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
-			}
-			if pangolin.IsBadRequest(err) {
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-					s.Phase = pangolinv1alpha1.PublicResourcePhaseError
-					setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
-				})
-				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
-			}
+	if err := r.ensureExists(ctx, res, site.Status.SiteID); err != nil {
+		if pangolin.IsConflict(err) {
+			logger.Info("Pangolin resource already exists with that domain; manual intervention required", "error", err)
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+				setCondition(s, metav1.ConditionFalse, reasonPending,
+					"a resource with that domain already exists in Pangolin; delete it from Pangolin or change spec.fullDomain to resolve",
+					res.Generation)
 			})
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
-	} else if res.Generation != res.Status.ObservedGeneration {
+		if pangolin.IsBadRequest(err) {
+			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+				s.Phase = pangolinv1alpha1.PublicResourcePhaseError
+				setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
+			})
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		}
+		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+			setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+		})
+		return ctrl.Result{}, err
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if res.Generation != res.Status.ObservedGeneration {
 		if err := r.updateResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
-				logger.Info("Pangolin resource no longer exists, will re-create", "resourceID", res.Status.ResourceID)
-				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+				logger.Info("Pangolin resource no longer exists during update, will retry", "resourceID", res.Status.ResourceID)
+				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 					s.ResourceID = 0
 					s.NiceID = ""
 					s.FullDomain = ""
 					s.TargetIDs = []int{}
 					s.RuleIDs = []int{}
-				}); patchErr != nil {
-					return ctrl.Result{}, patchErr
-				}
-				return ctrl.Result{RequeueAfter: time.Second}, nil
+				})
+				return ctrl.Result{Requeue: true}, nil
 			}
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
 			})
 			return ctrl.Result{}, err
-		}
-	} else if res.Status.ResourceID != 0 {
-		// Steady-state drift check — verify the resource still exists via list.
-		resources, err := r.PangolinClient.ListResources(ctx, res.Spec.Name)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("drift check ListResources: %w", err)
-		}
-		found := false
-		for _, item := range resources {
-			if item.ResourceID == res.Status.ResourceID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			logger.Info("Pangolin resource no longer exists, resetting for re-creation", "resourceID", res.Status.ResourceID)
-			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-				s.ResourceID = 0
-				s.NiceID = ""
-				s.FullDomain = ""
-				s.TargetIDs = []int{}
-				s.RuleIDs = []int{}
-			}); patchErr != nil {
-				return ctrl.Result{}, patchErr
-			}
-			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 	}
 
@@ -167,6 +143,87 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 	return ctrl.Result{RequeueAfter: resyncInterval}, nil
 }
 
+// ensureExists verifies that the Pangolin resource exists, adopting an existing
+// one or creating a new one as needed.
+func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.PublicResource, siteID int) error {
+	logger := log.FromContext(ctx)
+
+	items, err := r.PangolinClient.ListResources(ctx, res.Spec.Name)
+	if err != nil {
+		return fmt.Errorf("ListResources: %w", err)
+	}
+
+	match := findResource(items, res.Spec)
+
+	if res.Status.ResourceID != 0 {
+		for _, item := range items {
+			if item.ResourceID == res.Status.ResourceID {
+				return nil // Still exists, nothing to do.
+			}
+		}
+		logger.Info("Pangolin resource no longer exists", "resourceID", res.Status.ResourceID)
+	}
+
+	if match != nil {
+		logger.Info("Adopting existing Pangolin resource", "resourceID", match.ResourceID)
+		return r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+			s.ResourceID = match.ResourceID
+			s.NiceID = match.NiceID
+			s.FullDomain = match.FullDomain
+			s.Phase = pangolinv1alpha1.PublicResourcePhaseCreating
+		})
+	}
+
+	return r.createResource(ctx, res, siteID)
+}
+
+// findResource returns the first item matching by spec criteria.
+// For HTTP resources: match by FullDomain.
+// For TCP/UDP resources: match by Name.
+func findResource(items []pangolin.ResourceItem, spec pangolinv1alpha1.PublicResourceSpec) *pangolin.ResourceItem {
+	for i, item := range items {
+		if item.Name != spec.Name {
+			continue
+		}
+		if spec.Protocol == protocolHTTP && spec.FullDomain != "" {
+			if item.FullDomain == spec.FullDomain {
+				return &items[i]
+			}
+			continue
+		}
+		return &items[i]
+	}
+	return nil
+}
+
+// buildHTTPUpdateRequest builds the UpdateResourceRequest for HTTP-protocol resources.
+func buildHTTPUpdateRequest(spec pangolinv1alpha1.PublicResourceSpec) pangolin.UpdateResourceRequest {
+	f := new(false)
+	req := pangolin.UpdateResourceRequest{
+		Ssl:         new(spec.Ssl),
+		Sso:         f,
+		BlockAccess: f,
+		Enabled:     spec.Enabled,
+		ApplyRules:  new(len(spec.Rules) > 0),
+	}
+	if spec.TlsServerName != "" {
+		req.TlsServerName = &spec.TlsServerName
+	}
+	if spec.HostHeader != "" {
+		req.SetHostHeader = &spec.HostHeader
+	}
+	if spec.Auth != nil && spec.Auth.SsoEnabled {
+		req.Sso = new(true)
+		if spec.Auth.AutoLoginIdp > 0 {
+			req.SkipToIdpId = &spec.Auth.AutoLoginIdp
+		}
+	}
+	if spec.Auth != nil && len(spec.Auth.WhitelistUsers) > 0 {
+		req.EmailWhitelistEnabled = new(true)
+	}
+	return req
+}
+
 func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.PublicResource, siteID int) error {
 	logger := log.FromContext(ctx)
 
@@ -176,7 +233,7 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 		return err
 	}
 
-	isHTTP := res.Spec.Protocol == "http"
+	isHTTP := res.Spec.Protocol == protocolHTTP
 
 	createReq := pangolin.CreateResourceRequest{
 		Name:      res.Spec.Name,
@@ -266,40 +323,12 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 	})
 }
 
-// buildHTTPUpdateRequest builds the UpdateResourceRequest for HTTP-protocol resources.
-func buildHTTPUpdateRequest(spec pangolinv1alpha1.PublicResourceSpec) pangolin.UpdateResourceRequest {
-	f := new(false)
-	req := pangolin.UpdateResourceRequest{
-		Ssl:         new(spec.Ssl),
-		Sso:         f,
-		BlockAccess: f,
-		Enabled:     spec.Enabled,
-		ApplyRules:  new(len(spec.Rules) > 0),
-	}
-	if spec.TlsServerName != "" {
-		req.TlsServerName = &spec.TlsServerName
-	}
-	if spec.HostHeader != "" {
-		req.SetHostHeader = &spec.HostHeader
-	}
-	if spec.Auth != nil && spec.Auth.SsoEnabled {
-		req.Sso = new(true)
-		if spec.Auth.AutoLoginIdp > 0 {
-			req.SkipToIdpId = &spec.Auth.AutoLoginIdp
-		}
-	}
-	if spec.Auth != nil && len(spec.Auth.WhitelistUsers) > 0 {
-		req.EmailWhitelistEnabled = new(true)
-	}
-	return req
-}
-
 func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.PublicResource, siteID int) error {
 	// Always re-apply all settings on update — spec is the source of truth.
 	updateReq := pangolin.UpdateResourceRequest{
 		Name: res.Spec.Name,
 	}
-	if res.Spec.Protocol == "http" {
+	if res.Spec.Protocol == protocolHTTP {
 		httpReq := buildHTTPUpdateRequest(res.Spec)
 		httpReq.Name = res.Spec.Name
 		updateReq = httpReq

@@ -25,6 +25,9 @@ func TestReconcile_CreateResource(t *testing.T) {
 	applySettingsCalled := false
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+	})
 	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, r *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
 			"domains": []map[string]any{
@@ -419,6 +422,9 @@ func TestReconcile_RequeuesWhenSiteNotReady(t *testing.T) {
 
 func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+	})
 	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, r *http.Request) {
 		testutil.PangolinResponse(t, w, pangolin.ListDomainsResponse{
 			Domains: []pangolin.Domain{
@@ -466,15 +472,24 @@ func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 	}
 }
 
-// TestReconcile_DriftDetection_ResetsResourceIDWhenNotInList verifies that when the Pangolin
-// resource no longer exists in the list, ResourceID is reset and reconcile requeues for re-creation.
-func TestReconcile_DriftDetection_ResetsResourceIDWhenNotInList(t *testing.T) {
+// TestReconcile_DriftDetection_RecreatesWhenNotInList verifies that when the Pangolin
+// resource no longer exists in the list, a new resource is created via ensureExists.
+func TestReconcile_DriftDetection_RecreatesWhenNotInList(t *testing.T) {
+	createResourceCalled := false
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			// Return an empty list — resource 7 is not present.
 			testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
 		}
+	})
+	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, r *http.Request) {
+		createResourceCalled = true
+		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 42, NiceID: "res-42"})
+	})
+	mux.HandleFunc("/v1/resource/42/target", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 100})
 	})
 
 	srv := httptest.NewServer(mux)
@@ -509,22 +524,22 @@ func TestReconcile_DriftDetection_ResetsResourceIDWhenNotInList(t *testing.T) {
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-res", Namespace: "default"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected RequeueAfter to be set after drift detection")
+	if !createResourceCalled {
+		t.Error("expected CreateResource to be called when resource is missing from list")
 	}
 
 	var updated pangolinv1alpha1.PublicResource
 	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-res", Namespace: "default"}, &updated); err != nil {
 		t.Fatalf("failed to get resource: %v", err)
 	}
-	if updated.Status.ResourceID != 0 {
-		t.Errorf("expected ResourceID to be reset to 0, got %d", updated.Status.ResourceID)
+	if updated.Status.ResourceID != 42 {
+		t.Errorf("expected ResourceID to be 42 after re-creation, got %d", updated.Status.ResourceID)
 	}
 }
 
@@ -589,6 +604,9 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 // re-reconciliation doesn't create a duplicate resource.
 func TestReconcile_CreateResource_TargetFailure(t *testing.T) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+	})
 	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
 			"domains": []map[string]any{
