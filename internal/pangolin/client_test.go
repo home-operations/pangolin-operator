@@ -602,3 +602,19 @@ func TestDo_Conflict(t *testing.T) {
 		t.Errorf("expected ErrConflict, got %T: %v", err, err)
 	}
 }
+
+func TestDo_BadRequest(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/test-org/site", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	c := newTestClient(t, mux)
+	_, err := c.CreateSite(context.Background(), CreateSiteRequest{Name: "bad"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !IsBadRequest(err) {
+		t.Errorf("expected ErrBadRequest, got %T: %v", err, err)
+	}
+}

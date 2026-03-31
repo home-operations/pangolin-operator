@@ -28,13 +28,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 	"github.com/home-operations/pangolin-operator/internal/controller/newtsite"
 	"github.com/home-operations/pangolin-operator/internal/controller/privateresource"
 	"github.com/home-operations/pangolin-operator/internal/controller/publicresource"
 	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
+	operatormetrics "github.com/home-operations/pangolin-operator/internal/metrics"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -51,6 +54,7 @@ func init() {
 	utilruntime.Must(corev1.AddToScheme(scheme))
 	utilruntime.Must(pangolinv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(gatewayv1.Install(scheme))
+	utilruntime.Must(gatewayv1alpha2.Install(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -162,6 +166,7 @@ func main() {
 					}),
 				},
 				&gatewayv1.HTTPRoute{}:              {},
+				&gatewayv1alpha2.TCPRoute{}:         {},
 				&pangolinv1alpha1.NewtSite{}:        {},
 				&pangolinv1alpha1.PublicResource{}:  {},
 				&pangolinv1alpha1.PrivateResource{}: {},
@@ -175,6 +180,8 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	ctrlmetrics.Registry.MustRegister(operatormetrics.NewResourceCollector(mgr.GetClient()))
 
 	setupLog.Info("Setting up controllers")
 

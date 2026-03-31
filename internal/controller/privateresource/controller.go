@@ -21,6 +21,7 @@ import (
 
 const (
 	PrivateResourceFinalizer = "pangolin.home-operations.com/privateresource-finalizer"
+	resyncInterval           = 10 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=privateresources,verbs=get;list;watch;create;update;patch;delete
@@ -80,6 +81,13 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 
 	if res.Status.SiteResourceID == 0 {
 		if err := r.createSiteResource(ctx, res, site.Status.SiteID); err != nil {
+			if pangolin.IsBadRequest(err) {
+				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+					s.Phase = pangolinv1alpha1.PrivateResourcePhaseError
+					setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
+				})
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
 			})
@@ -91,8 +99,6 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	} else if res.Generation != res.Status.ObservedGeneration {
 		if err := r.updateSiteResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
-				// Resource was deleted out-of-band; reset the stored ID so the
-				// next iteration of this reconcile loop re-creates it.
 				logger.Info("Pangolin site resource no longer exists, will re-create", "siteResourceID", res.Status.SiteResourceID)
 				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 					s.SiteResourceID = 0
@@ -107,6 +113,21 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 			})
 			return ctrl.Result{}, err
 		}
+	} else if res.Status.SiteResourceID != 0 {
+		// Steady-state drift check — update path already handles 404.
+		if _, err := r.PangolinClient.GetSiteResource(ctx, res.Status.SiteResourceID); err != nil {
+			if pangolin.IsNotFound(err) {
+				logger.Info("Pangolin site resource no longer exists, resetting for re-creation", "siteResourceID", res.Status.SiteResourceID)
+				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+					s.SiteResourceID = 0
+					s.NiceID = ""
+				}); patchErr != nil {
+					return ctrl.Result{}, patchErr
+				}
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("drift check GetSiteResource: %w", err)
+		}
 	}
 
 	if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
@@ -118,7 +139,15 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	}
 
 	logger.V(1).Info("PrivateResource reconciled", "siteResourceID", res.Status.SiteResourceID)
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: resyncInterval}, nil
+}
+
+// orEmpty returns s if non-nil, otherwise an empty slice of the same type.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }
 
 func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
@@ -130,19 +159,6 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 		return err
 	}
 
-	roleIds := res.Spec.RoleIds
-	if roleIds == nil {
-		roleIds = []int{}
-	}
-	userIds := res.Spec.UserIds
-	if userIds == nil {
-		userIds = []string{}
-	}
-	clientIds := res.Spec.ClientIds
-	if clientIds == nil {
-		clientIds = []int{}
-	}
-
 	created, err := r.PangolinClient.CreateSiteResource(ctx, pangolin.CreateSiteResourceRequest{
 		Name:               res.Spec.Name,
 		SiteID:             siteID,
@@ -152,35 +168,31 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 		UdpPortRangeString: res.Spec.UdpPorts,
 		DisableIcmp:        res.Spec.DisableIcmp,
 		Alias:              res.Spec.Alias,
-		RoleIds:            roleIds,
-		UserIds:            userIds,
-		ClientIds:          clientIds,
+		RoleIds:            orEmpty(res.Spec.RoleIds),
+		UserIds:            orEmpty(res.Spec.UserIds),
+		ClientIds:          orEmpty(res.Spec.ClientIds),
 	})
 	if err != nil {
 		return fmt.Errorf("CreateSiteResource: %w", err)
 	}
 	logger.Info("Pangolin site resource created", "siteResourceID", created.SiteResourceID)
 
-	return r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+	if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 		s.SiteResourceID = created.SiteResourceID
 		s.NiceID = created.NiceID
 		s.Phase = pangolinv1alpha1.PrivateResourcePhaseCreating
-	})
+	}); patchErr != nil {
+		// Rollback to avoid orphaned Pangolin site resource.
+		logger.Error(patchErr, "failed to persist SiteResourceID, rolling back Pangolin site resource", "siteResourceID", created.SiteResourceID)
+		if delErr := r.PangolinClient.DeleteSiteResource(ctx, created.SiteResourceID); delErr != nil {
+			logger.Error(delErr, "failed to roll back Pangolin site resource", "siteResourceID", created.SiteResourceID)
+		}
+		return patchErr
+	}
+	return nil
 }
 
 func (r *Reconciler) updateSiteResource(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
-	roleIds := res.Spec.RoleIds
-	if roleIds == nil {
-		roleIds = []int{}
-	}
-	userIds := res.Spec.UserIds
-	if userIds == nil {
-		userIds = []string{}
-	}
-	clientIds := res.Spec.ClientIds
-	if clientIds == nil {
-		clientIds = []int{}
-	}
 	if err := r.PangolinClient.UpdateSiteResource(ctx, res.Status.SiteResourceID, pangolin.UpdateSiteResourceRequest{
 		SiteID:             siteID,
 		Name:               res.Spec.Name,
@@ -190,9 +202,9 @@ func (r *Reconciler) updateSiteResource(ctx context.Context, res *pangolinv1alph
 		UdpPortRangeString: res.Spec.UdpPorts,
 		DisableIcmp:        res.Spec.DisableIcmp,
 		Alias:              res.Spec.Alias,
-		RoleIds:            roleIds,
-		UserIds:            userIds,
-		ClientIds:          clientIds,
+		RoleIds:            orEmpty(res.Spec.RoleIds),
+		UserIds:            orEmpty(res.Spec.UserIds),
+		ClientIds:          orEmpty(res.Spec.ClientIds),
 	}); err != nil {
 		return fmt.Errorf("UpdateSiteResource: %w", err)
 	}

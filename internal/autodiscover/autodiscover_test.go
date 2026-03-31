@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 )
@@ -856,5 +857,204 @@ func TestServiceProtocol(t *testing.T) {
 		if got := serviceProtocol(tt.proto); got != tt.want {
 			t.Errorf("serviceProtocol(%v) = %q, want %q", tt.proto, got, tt.want)
 		}
+	}
+}
+
+func newTCPRouteWithBackendRef(svcName, namespace string, port *gatewayv1.PortNumber) *gatewayv1alpha2.TCPRoute {
+	var ns *gatewayv1.Namespace
+	if namespace != "" {
+		n := gatewayv1.Namespace(namespace)
+		ns = &n
+	}
+	return &gatewayv1alpha2.TCPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-tcp-route", Namespace: testNamespace},
+		Spec: gatewayv1alpha2.TCPRouteSpec{
+			Rules: []gatewayv1alpha2.TCPRouteRule{
+				{
+					BackendRefs: []gatewayv1alpha2.BackendRef{
+						{
+							BackendObjectReference: gatewayv1.BackendObjectReference{
+								Name:      gatewayv1.ObjectName(svcName),
+								Namespace: ns,
+								Port:      port,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func newTCPRoute(parentRefs []gatewayv1.ParentReference) *gatewayv1alpha2.TCPRoute {
+	return &gatewayv1alpha2.TCPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-tcp-route", Namespace: testNamespace},
+		Spec: gatewayv1alpha2.TCPRouteSpec{
+			CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: parentRefs},
+		},
+	}
+}
+
+func TestTCPRouteReferencesGateway(t *testing.T) {
+	ns := gatewayv1.Namespace("infra")
+	route := newTCPRoute([]gatewayv1.ParentReference{
+		{Name: "my-gateway", Namespace: &ns},
+	})
+
+	tests := []struct {
+		gatewayName string
+		gatewayNS   string
+		want        bool
+	}{
+		{"my-gateway", "", true},
+		{"my-gateway", "infra", true},
+		{"my-gateway", "other-ns", false},
+		{"other-gateway", "", false},
+	}
+	for _, tt := range tests {
+		if got := TCPRouteReferencesGateway(route, tt.gatewayName, tt.gatewayNS); got != tt.want {
+			t.Errorf("TCPRouteReferencesGateway(%q, %q) = %v, want %v", tt.gatewayName, tt.gatewayNS, got, tt.want)
+		}
+	}
+}
+
+func TestTCPRouteReferencesGateway_NoParentRefs(t *testing.T) {
+	route := newTCPRoute(nil)
+	if TCPRouteReferencesGateway(route, "my-gateway", "") {
+		t.Error("expected false for route with no parentRefs")
+	}
+}
+
+func TestBuildTCPRouteSpec_MissingSiteRef(t *testing.T) {
+	port := gatewayv1.PortNumber(5432)
+	route := newTCPRouteWithBackendRef("my-db", testNamespace, &port)
+	if _, err := BuildTCPRouteSpec(route, map[string]string{}, defaultCfg(), ""); err == nil {
+		t.Error("expected error when site-ref annotation is missing and no fallback")
+	}
+}
+
+func TestBuildTCPRouteSpec_NoBackendRefs(t *testing.T) {
+	route := newTCPRoute(nil)
+	if _, err := BuildTCPRouteSpec(route, map[string]string{}, defaultCfg(), "homelab"); err == nil {
+		t.Error("expected error when route has no backendRefs")
+	}
+}
+
+func TestBuildTCPRouteSpec_SiteRefFromFallback(t *testing.T) {
+	port := gatewayv1.PortNumber(5432)
+	route := newTCPRouteWithBackendRef("postgres", "db", &port)
+	spec, err := BuildTCPRouteSpec(route, map[string]string{}, defaultCfg(), "homelab")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.SiteRef != "homelab" {
+		t.Errorf("expected SiteRef=homelab from fallback, got %q", spec.SiteRef)
+	}
+}
+
+func TestBuildTCPRouteSpec_Defaults(t *testing.T) {
+	port := gatewayv1.PortNumber(5432)
+	route := newTCPRouteWithBackendRef("postgres", "db", &port)
+	ann := map[string]string{"pangolin-operator/site-ref": testSiteRef}
+	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.SiteRef != testSiteRef {
+		t.Errorf("expected SiteRef=%q, got %q", testSiteRef, spec.SiteRef)
+	}
+	if spec.Protocol != testProtocolTCP {
+		t.Errorf("expected Protocol=tcp, got %q", spec.Protocol)
+	}
+	if spec.ProxyPort != 5432 {
+		t.Errorf("expected ProxyPort=5432, got %d", spec.ProxyPort)
+	}
+	if spec.Name != "my-tcp-route" {
+		t.Errorf("expected Name=my-tcp-route, got %q", spec.Name)
+	}
+	if len(spec.Targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(spec.Targets))
+	}
+	if spec.Targets[0].Hostname != "postgres.db.svc.cluster.local" {
+		t.Errorf("unexpected target hostname: %q", spec.Targets[0].Hostname)
+	}
+	if spec.Targets[0].Port != 5432 {
+		t.Errorf("expected target port 5432, got %d", spec.Targets[0].Port)
+	}
+}
+
+func TestBuildTCPRouteSpec_BackendRefNoNamespace(t *testing.T) {
+	port := gatewayv1.PortNumber(3306)
+	route := newTCPRouteWithBackendRef("mysql", "", &port)
+	spec, err := BuildTCPRouteSpec(route, map[string]string{}, defaultCfg(), "homelab")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Targets[0].Hostname != "mysql."+testNamespace+".svc.cluster.local" {
+		t.Errorf("unexpected hostname: %q", spec.Targets[0].Hostname)
+	}
+}
+
+func TestBuildTCPRouteSpec_ProxyPortAnnotation(t *testing.T) {
+	port := gatewayv1.PortNumber(5432)
+	route := newTCPRouteWithBackendRef("postgres", "db", &port)
+	ann := map[string]string{
+		"pangolin-operator/site-ref":   testSiteRef,
+		"pangolin-operator/proxy-port": "15432",
+	}
+	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.ProxyPort != 15432 {
+		t.Errorf("expected ProxyPort=15432 from annotation, got %d", spec.ProxyPort)
+	}
+	if spec.Targets[0].Port != 5432 {
+		t.Errorf("expected target port to remain 5432, got %d", spec.Targets[0].Port)
+	}
+}
+
+func TestBuildTCPRouteSpec_CustomName(t *testing.T) {
+	port := gatewayv1.PortNumber(5432)
+	route := newTCPRouteWithBackendRef("postgres", "db", &port)
+	ann := map[string]string{
+		"pangolin-operator/site-ref": testSiteRef,
+		"pangolin-operator/name":     "My Database",
+	}
+	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Name != "My Database" {
+		t.Errorf("expected name=My Database, got %q", spec.Name)
+	}
+}
+
+func TestBuildTCPRouteSpec_EnabledAnnotation(t *testing.T) {
+	port := gatewayv1.PortNumber(5432)
+	route := newTCPRouteWithBackendRef("postgres", "db", &port)
+	ann := map[string]string{
+		"pangolin-operator/site-ref": testSiteRef,
+		"pangolin-operator/enabled":  "false",
+	}
+	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Enabled {
+		t.Error("expected Enabled=false")
+	}
+}
+
+func TestBuildTCPRouteSpec_CustomPrefix(t *testing.T) {
+	port := gatewayv1.PortNumber(5432)
+	route := newTCPRouteWithBackendRef("postgres", "db", &port)
+	ann := map[string]string{"myapp/site-ref": testSiteRef}
+	spec, err := BuildTCPRouteSpec(route, ann, &pangolinv1alpha1.AutoDiscoverSpec{AnnotationPrefix: "myapp"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.SiteRef != testSiteRef {
+		t.Errorf("expected SiteRef=%q with custom prefix, got %q", testSiteRef, spec.SiteRef)
 	}
 }

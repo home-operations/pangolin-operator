@@ -211,6 +211,13 @@ type AutoDiscoverSpec struct {
 	// +optional
 	EnableServiceDiscovery bool `json:"enableServiceDiscovery,omitempty"`
 
+	// EnableTCPRouteDiscovery enables Gateway API TCPRoute discovery for this site.
+	// When false (default), TCPRoutes are not auto-discovered even if annotated.
+	// Set to true to enable event-driven and periodic TCPRoute scanning.
+	// +kubebuilder:default=false
+	// +optional
+	EnableTCPRouteDiscovery bool `json:"enableTCPRouteDiscovery,omitempty"`
+
 	// AllPorts exposes all TCP/UDP ports of a Service as individual PublicResources.
 	// +optional
 	AllPorts bool `json:"allPorts,omitempty"`

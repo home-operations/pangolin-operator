@@ -106,6 +106,13 @@ spec:
                       When false (default), Services are not auto-discovered even if annotated.
                       Set to true to enable event-driven and periodic Service scanning.
                     type: boolean
+                  enableTCPRouteDiscovery:
+                    default: false
+                    description: |-
+                      EnableTCPRouteDiscovery enables Gateway API TCPRoute discovery for this site.
+                      When false (default), TCPRoutes are not auto-discovered even if annotated.
+                      Set to true to enable event-driven and periodic TCPRoute scanning.
+                    type: boolean
                   gatewayName:
                     description: |-
                       GatewayName filters HTTPRoutes by spec.parentRefs[].name.
