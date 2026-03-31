@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
@@ -22,6 +23,7 @@ func NewScheme() *runtime.Scheme {
 	_ = pangolinv1alpha1.AddToScheme(s)
 	_ = corev1.AddToScheme(s)
 	_ = appsv1.AddToScheme(s)
+	_ = gatewayv1alpha2.Install(s)
 	return s
 }
 

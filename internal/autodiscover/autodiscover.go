@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 )
@@ -486,6 +487,76 @@ func serviceProtocol(p corev1.Protocol) string {
 		return "udp"
 	}
 	return "tcp"
+}
+
+func TCPRouteReferencesGateway(route *gatewayv1alpha2.TCPRoute, gatewayName, gatewayNamespace string) bool {
+	for _, parent := range route.Spec.ParentRefs {
+		if parent.Name != gatewayv1.ObjectName(gatewayName) {
+			continue
+		}
+		if gatewayNamespace != "" && parent.Namespace != nil && string(*parent.Namespace) != gatewayNamespace {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func BuildTCPRouteSpec(route *gatewayv1alpha2.TCPRoute, annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec, siteRefFallback string) (pangolinv1alpha1.PublicResourceSpec, error) {
+	prefix := annotationPrefix(cfg)
+
+	siteRef, ok := annotations[prefix+"/site-ref"]
+	if !ok || siteRef == "" {
+		if siteRefFallback == "" {
+			return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("annotation %s/site-ref is required on TCPRoute %s/%s", prefix, route.Namespace, route.Name)
+		}
+		siteRef = siteRefFallback
+	}
+
+	if len(route.Spec.Rules) == 0 || len(route.Spec.Rules[0].BackendRefs) == 0 {
+		return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("TCPRoute %s/%s has no backendRefs", route.Namespace, route.Name)
+	}
+
+	ref := route.Spec.Rules[0].BackendRefs[0]
+	refNamespace := route.Namespace
+	if ref.Namespace != nil && *ref.Namespace != "" {
+		refNamespace = string(*ref.Namespace)
+	}
+	targetHostname := fmt.Sprintf("%s.%s.svc.cluster.local", ref.Name, refNamespace)
+	targetPort := 0
+	if ref.Port != nil {
+		targetPort = int(*ref.Port)
+	}
+
+	proxyPort := targetPort
+	if v, ok := annotations[prefix+"/proxy-port"]; ok {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 1 && parsed <= 65535 {
+			proxyPort = parsed
+		}
+	}
+
+	displayName := route.Name
+	if v, ok := annotations[prefix+"/name"]; ok && v != "" {
+		displayName = v
+	}
+
+	spec := pangolinv1alpha1.PublicResourceSpec{
+		SiteRef:   siteRef,
+		Name:      displayName,
+		Protocol:  "tcp",
+		ProxyPort: proxyPort,
+		Targets: []pangolinv1alpha1.PublicTargetSpec{
+			{Hostname: targetHostname, Port: targetPort},
+		},
+	}
+	if v, ok := annotations[prefix+"/enabled"]; ok {
+		spec.Enabled = isTruthy(v)
+	}
+	return spec, nil
+}
+
+func EnsureTCPRouteResource(ctx context.Context, c client.Client, owner metav1.Object, routeName, namespace, resName string, spec pangolinv1alpha1.PublicResourceSpec) error {
+	return ensureOwnedPublicResource(ctx, c, owner, "tcproute", routeName, namespace, resName, spec)
 }
 
 func EnsureHTTPRouteResource(ctx context.Context, c client.Client, owner metav1.Object, routeName, namespace, resName string, spec pangolinv1alpha1.PublicResourceSpec) error {

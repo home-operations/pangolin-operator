@@ -23,7 +23,7 @@ rules:
     resources: [deployments]
     verbs: [create, delete, get, list, patch, update, watch]
   - apiGroups: [gateway.networking.k8s.io]
-    resources: [httproutes]
+    resources: [httproutes, tcproutes]
     verbs: [get, list, watch]
   - apiGroups: [pangolin.home-operations.com]
     resources: [newtsites, publicresources, privateresources]

@@ -196,7 +196,7 @@ func TestReconcile_Update_CallsUpdateSiteOnGenerationChange(t *testing.T) {
 			Finalizers: []string{NewtSiteFinalizer},
 		},
 		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "new-name"},
-		Status: pangolinv1alpha1.NewtSiteStatus{
+		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1,
 			NewtSecretName:     "my-site-newt-credentials",
