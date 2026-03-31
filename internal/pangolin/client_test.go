@@ -238,23 +238,26 @@ func TestCreateResource(t *testing.T) {
 	}
 }
 
-func TestGetResourceByNiceID(t *testing.T) {
-	want := GetResourceResponse{ResourceID: 7, Name: "my-resource", FullDomain: "app.example.com"}
+func TestListResources(t *testing.T) {
+	want := []ResourceItem{
+		{ResourceID: 7, Name: "my-resource", FullDomain: "app.example.com"},
+		{ResourceID: 8, Name: "other-resource"},
+	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/org/test-org/resource/my-resource-nice", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/test-org/resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		apiResponse(t, w, want)
+		apiResponse(t, w, listResourcesResponse{Resources: want})
 	})
 
 	c := newTestClient(t, mux)
-	got, err := c.GetResourceByNiceID(context.Background(), "my-resource-nice")
+	got, err := c.ListResources(context.Background(), "my-resource")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.ResourceID != want.ResourceID || got.Name != want.Name {
+	if len(got) != 2 || got[0].ResourceID != 7 || got[1].ResourceID != 8 {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }
@@ -380,23 +383,26 @@ func TestCreateSiteResource(t *testing.T) {
 	}
 }
 
-func TestGetSiteResourceByNiceID(t *testing.T) {
-	want := SiteResourceItem{SiteResourceID: 55, Name: "priv-res", Mode: "host"}
+func TestListSiteResources(t *testing.T) {
+	want := []SiteResourceItem{
+		{SiteResourceID: 55, Name: "priv-res", Mode: "host"},
+		{SiteResourceID: 56, Name: "other-res", Mode: "cidr"},
+	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/org/test-org/site/1/resource/nice/priv-res-nice", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/test-org/site-resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		apiResponse(t, w, want)
+		apiResponse(t, w, listSiteResourcesResponse{SiteResources: want})
 	})
 
 	c := newTestClient(t, mux)
-	got, err := c.GetSiteResourceByNiceID(context.Background(), 1, "priv-res-nice")
+	got, err := c.ListSiteResources(context.Background(), "priv-res")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.SiteResourceID != want.SiteResourceID || got.Name != want.Name {
+	if len(got) != 2 || got[0].SiteResourceID != 55 || got[1].SiteResourceID != 56 {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }

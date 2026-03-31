@@ -225,14 +225,14 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 	}
 }
 
-// TestReconcile_DriftDetection_ResetsSiteResourceIDOn404 verifies that when the Pangolin
-// site resource no longer exists, SiteResourceID is reset and reconcile requeues for re-creation.
-func TestReconcile_DriftDetection_ResetsSiteResourceIDOn404(t *testing.T) {
+// TestReconcile_DriftDetection_ResetsSiteResourceIDWhenNotInList verifies that when the Pangolin
+// site resource no longer exists in the list, SiteResourceID is reset and reconcile requeues for re-creation.
+func TestReconcile_DriftDetection_ResetsSiteResourceIDWhenNotInList(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/org/org1/site/1/resource/nice/sres-55", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			w.WriteHeader(http.StatusNotFound)
-			return
+			// Return an empty list — site resource 55 is not present.
+			testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
 		}
 	})
 
@@ -290,10 +290,12 @@ func TestReconcile_DriftDetection_ResetsSiteResourceIDOn404(t *testing.T) {
 // a RequeueAfter interval for periodic re-sync.
 func TestReconcile_PeriodicResync(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/org/org1/site/1/resource/nice/sres-55", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			testutil.PangolinResponse(t, w, pangolin.SiteResourceItem{
-				SiteResourceID: 55, NiceID: "sres-55", Name: "my-priv", Mode: "host", Destination: "10.0.0.5",
+			testutil.PangolinResponse(t, w, map[string]any{
+				"siteResources": []pangolin.SiteResourceItem{
+					{SiteResourceID: 55, NiceID: "sres-55", Name: "my-priv", Mode: "host", Destination: "10.0.0.5"},
+				},
 			})
 		}
 	})

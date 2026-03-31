@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 
 	"github.com/home-operations/pangolin-operator/internal/metrics"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Credentials holds the connection details parsed from a Kubernetes Secret
@@ -71,7 +71,7 @@ type API interface {
 
 	// Public resources
 	CreateResource(ctx context.Context, req CreateResourceRequest) (*CreateResourceResponse, error)
-	GetResourceByNiceID(ctx context.Context, niceID string) (*GetResourceResponse, error)
+	ListResources(ctx context.Context, query string) ([]ResourceItem, error)
 	UpdateResource(ctx context.Context, resourceID int, req UpdateResourceRequest) error
 	DeleteResource(ctx context.Context, resourceID int) error
 
@@ -85,7 +85,7 @@ type API interface {
 
 	// Private (VPN) resources
 	CreateSiteResource(ctx context.Context, req CreateSiteResourceRequest) (*CreateSiteResourceResponse, error)
-	GetSiteResourceByNiceID(ctx context.Context, siteID int, niceID string) (*SiteResourceItem, error)
+	ListSiteResources(ctx context.Context, query string) ([]SiteResourceItem, error)
 	UpdateSiteResource(ctx context.Context, siteResourceID int, req UpdateSiteResourceRequest) error
 	DeleteSiteResource(ctx context.Context, siteResourceID int) error
 }
@@ -149,9 +149,6 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 		return fmt.Errorf("%s request failed: %w", method, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	logger := log.FromContext(ctx)
-	logger.Info("DEBUG Pangolin API call", "method", method, "url", url, "httpStatus", resp.StatusCode)
 
 	// Check for 404 before attempting to decode — the server may return an HTML page
 	// for missing resources rather than a JSON envelope.
@@ -334,7 +331,7 @@ func (c *Client) CreateResource(ctx context.Context, req CreateResourceRequest) 
 	return &out, nil
 }
 
-type GetResourceResponse struct {
+type ResourceItem struct {
 	ResourceID int    `json:"resourceId"`
 	NiceID     string `json:"niceId"`
 	Name       string `json:"name"`
@@ -344,13 +341,17 @@ type GetResourceResponse struct {
 	Enabled    bool   `json:"enabled"`
 }
 
-func (c *Client) GetResourceByNiceID(ctx context.Context, niceID string) (*GetResourceResponse, error) {
-	url := fmt.Sprintf("%s/org/%s/resource/%s", c.apiBase(), c.orgID, niceID)
-	var out GetResourceResponse
-	if err := c.do(ctx, http.MethodGet, url, nil, &out); err != nil {
-		return nil, fmt.Errorf("GetResourceByNiceID(%s): %w", niceID, err)
+type listResourcesResponse struct {
+	Resources []ResourceItem `json:"resources"`
+}
+
+func (c *Client) ListResources(ctx context.Context, query string) ([]ResourceItem, error) {
+	u := fmt.Sprintf("%s/org/%s/resources?pageSize=100&query=%s", c.apiBase(), c.orgID, neturl.QueryEscape(query))
+	var out listResourcesResponse
+	if err := c.do(ctx, http.MethodGet, u, nil, &out); err != nil {
+		return nil, fmt.Errorf("ListResources: %w", err)
 	}
-	return &out, nil
+	return out.Resources, nil
 }
 
 type UpdateResourceRequest struct {
@@ -485,13 +486,17 @@ type SiteResourceItem struct {
 	Enabled        bool   `json:"enabled"`
 }
 
-func (c *Client) GetSiteResourceByNiceID(ctx context.Context, siteID int, niceID string) (*SiteResourceItem, error) {
-	url := fmt.Sprintf("%s/org/%s/site/%d/resource/nice/%s", c.apiBase(), c.orgID, siteID, niceID)
-	var out SiteResourceItem
-	if err := c.do(ctx, http.MethodGet, url, nil, &out); err != nil {
-		return nil, fmt.Errorf("GetSiteResourceByNiceID(%s): %w", niceID, err)
+type listSiteResourcesResponse struct {
+	SiteResources []SiteResourceItem `json:"siteResources"`
+}
+
+func (c *Client) ListSiteResources(ctx context.Context, query string) ([]SiteResourceItem, error) {
+	u := fmt.Sprintf("%s/org/%s/site-resources?pageSize=100&query=%s", c.apiBase(), c.orgID, neturl.QueryEscape(query))
+	var out listSiteResourcesResponse
+	if err := c.do(ctx, http.MethodGet, u, nil, &out); err != nil {
+		return nil, fmt.Errorf("ListSiteResources: %w", err)
 	}
-	return &out, nil
+	return out.SiteResources, nil
 }
 
 type UpdateSiteResourceRequest struct {

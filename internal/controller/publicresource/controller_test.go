@@ -49,7 +49,7 @@ func TestReconcile_CreateResource(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+			testutil.PangolinResponse(t, w, pangolin.ResourceItem{ResourceID: 7, Name: "my-res"})
 		case http.MethodPost:
 			applySettingsCalled = true
 			var req pangolin.UpdateResourceRequest
@@ -115,7 +115,7 @@ func TestUpdateResource_NameChange(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "old-name"})
+			testutil.PangolinResponse(t, w, pangolin.ResourceItem{ResourceID: 7, Name: "old-name"})
 		case http.MethodPost:
 			updateCalled = true
 			var req pangolin.UpdateResourceRequest
@@ -171,7 +171,7 @@ func TestUpdateResource_TargetsChanged(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+			testutil.PangolinResponse(t, w, pangolin.ResourceItem{ResourceID: 7, Name: "my-res"})
 		case http.MethodPost:
 			testutil.PangolinResponse(t, w, nil)
 		}
@@ -238,7 +238,7 @@ func TestUpdateResource_TargetsUnchanged(t *testing.T) {
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+			testutil.PangolinResponse(t, w, pangolin.ResourceItem{ResourceID: 7, Name: "my-res"})
 		case http.MethodPost:
 			testutil.PangolinResponse(t, w, nil)
 		}
@@ -466,14 +466,14 @@ func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 	}
 }
 
-// TestReconcile_DriftDetection_ResetsResourceIDOn404 verifies that when the Pangolin
-// resource no longer exists, ResourceID is reset and reconcile requeues for re-creation.
-func TestReconcile_DriftDetection_ResetsResourceIDOn404(t *testing.T) {
+// TestReconcile_DriftDetection_ResetsResourceIDWhenNotInList verifies that when the Pangolin
+// resource no longer exists in the list, ResourceID is reset and reconcile requeues for re-creation.
+func TestReconcile_DriftDetection_ResetsResourceIDWhenNotInList(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			w.WriteHeader(http.StatusNotFound)
-			return
+			// Return an empty list — resource 7 is not present.
+			testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
 		}
 	})
 
@@ -532,9 +532,11 @@ func TestReconcile_DriftDetection_ResetsResourceIDOn404(t *testing.T) {
 // a RequeueAfter interval for periodic re-sync.
 func TestReconcile_PeriodicResync(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+			testutil.PangolinResponse(t, w, map[string]any{
+				"resources": []pangolin.ResourceItem{{ResourceID: 7, Name: "my-res"}},
+			})
 		}
 	})
 
