@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4](https://github.com/home-operations/pangolin-operator/compare/0.0.3...0.0.4) (2026-03-31)
+
+
+### Bug Fixes
+
+* **client:** prefer to use orgID scoped resources ([2e9485e](https://github.com/home-operations/pangolin-operator/commit/2e9485e5e2f1cbc86f9e8d83669882d2701d8621))
+
 ## [0.0.3](https://github.com/home-operations/pangolin-operator/compare/0.0.2...0.0.3) (2026-03-31)
 
 
