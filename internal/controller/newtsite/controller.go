@@ -397,7 +397,7 @@ func (r *Reconciler) processHTTPRoute(ctx context.Context, site *pangolinv1alpha
 			continue
 		}
 		resName := autodiscover.HostnameToResourceName(route.Name, host)
-		if err := autodiscover.EnsureHTTPRouteResource(ctx, r.Client, site, route.Name, site.Namespace, resName, spec); err != nil {
+		if err := autodiscover.EnsureHTTPRouteResource(ctx, r.Client, site, route.Name, route.Namespace, resName, spec); err != nil {
 			logger.Error(err, "failed to ensure PublicResource for HTTPRoute hostname", "hostname", host)
 		}
 	}
@@ -508,7 +508,7 @@ func (r *Reconciler) processTCPRoute(ctx context.Context, site *pangolinv1alpha1
 		return
 	}
 	resName := route.Name
-	if err := autodiscover.EnsureTCPRouteResource(ctx, r.Client, site, route.Name, site.Namespace, resName, spec); err != nil {
+	if err := autodiscover.EnsureTCPRouteResource(ctx, r.Client, site, route.Name, route.Namespace, resName, spec); err != nil {
 		logger.Error(err, "failed to ensure PublicResource for TCPRoute", "route", route.Name)
 	}
 }
@@ -567,9 +567,7 @@ func (r *Reconciler) scanHTTPRoutes(ctx context.Context, site *pangolinv1alpha1.
 		}
 		matched := false
 		if siteRef := annotations[p+"/site-ref"]; siteRef == site.Name {
-			if ns := annotations[p+"/site-namespace"]; ns == "" || ns == site.Namespace {
-				matched = true
-			}
+			matched = true
 		}
 		if !matched && cfg.GatewayName != "" {
 			matched = autodiscover.RouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace)
@@ -597,9 +595,7 @@ func (r *Reconciler) scanTCPRoutes(ctx context.Context, site *pangolinv1alpha1.N
 		}
 		matched := false
 		if siteRef := annotations[p+"/site-ref"]; siteRef == site.Name {
-			if ns := annotations[p+"/site-namespace"]; ns == "" || ns == site.Namespace {
-				matched = true
-			}
+			matched = true
 		}
 		if !matched && cfg.GatewayName != "" {
 			matched = autodiscover.TCPRouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace)
@@ -627,9 +623,6 @@ func (r *Reconciler) scanServices(ctx context.Context, site *pangolinv1alpha1.Ne
 		}
 		siteRef, ok := annotations[p+"/site-ref"]
 		if !ok || siteRef != site.Name {
-			continue
-		}
-		if ns := annotations[p+"/site-namespace"]; ns != "" && ns != site.Namespace {
 			continue
 		}
 		r.processService(ctx, site, cfg, p, svc)
@@ -681,9 +674,7 @@ func (r *Reconciler) resolveSite(
 		}
 
 		if siteRef := annotations[p+"/site-ref"]; siteRef == site.Name {
-			if ns := annotations[p+"/site-namespace"]; ns == "" || ns == site.Namespace {
-				return site, cfg, p, true, nil
-			}
+			return site, cfg, p, true, nil
 		}
 
 		if gatewayMatch != nil && gatewayMatch(cfg) {

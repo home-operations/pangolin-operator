@@ -330,7 +330,7 @@ type PublicResourceStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,shortName=pubr
+// +kubebuilder:resource:scope=Namespaced,shortName=pubr
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Site",type="string",JSONPath=".spec.siteRef"
 // +kubebuilder:printcolumn:name="Domain",type="string",JSONPath=".status.fullDomain"
