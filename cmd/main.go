@@ -58,6 +58,20 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+// detectNamespace reads the in-cluster SA namespace file,
+// falling back to OPERATOR_NAMESPACE for local development.
+func detectNamespace() string {
+	if ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+		return strings.TrimSpace(string(ns))
+	}
+	if ns := os.Getenv("OPERATOR_NAMESPACE"); ns != "" {
+		return ns
+	}
+	setupLog.Error(fmt.Errorf("could not detect operator namespace"), "set OPERATOR_NAMESPACE for local development")
+	os.Exit(1)
+	return ""
+}
+
 func mustEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
@@ -196,10 +210,11 @@ func main() {
 	}
 
 	if err := (&newtsite.Reconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		PangolinClient: pc,
-		NewtEndpoint:   newtEndpoint,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		PangolinClient:    pc,
+		NewtEndpoint:      newtEndpoint,
+		OperatorNamespace: detectNamespace(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NewtSite")
 		os.Exit(1)

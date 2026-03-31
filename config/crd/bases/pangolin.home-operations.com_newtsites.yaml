@@ -14,7 +14,7 @@ spec:
     shortNames:
     - nsite
     singular: newtsite
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.phase

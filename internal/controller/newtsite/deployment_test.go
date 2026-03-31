@@ -29,13 +29,13 @@ func newTestSite() *pangolinv1alpha1.NewtSite {
 
 func TestBuildDeployment_Defaults(t *testing.T) {
 	site := newTestSite()
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 
 	if d.Name != "my-site" {
 		t.Errorf("expected name 'my-site', got %q", d.Name)
 	}
-	if d.Namespace != "default" {
-		t.Errorf("expected namespace 'default', got %q", d.Namespace)
+	if d.Namespace != "test-ns" {
+		t.Errorf("expected namespace 'test-ns', got %q", d.Namespace)
 	}
 	if *d.Spec.Replicas != 1 {
 		t.Errorf("expected 1 replica, got %d", *d.Spec.Replicas)
@@ -60,7 +60,7 @@ func TestBuildDeployment_CustomImageAndTag(t *testing.T) {
 	site.Spec.Newt.Image = "my-registry/newt"
 	site.Spec.Newt.Tag = "v1.2.3"
 
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 	if c.Image != "my-registry/newt:v1.2.3" {
 		t.Errorf("unexpected image: %q", c.Image)
@@ -72,7 +72,7 @@ func TestBuildDeployment_CustomReplicas(t *testing.T) {
 	var r int32 = 0
 	site.Spec.Newt.Replicas = &r
 
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 	if *d.Spec.Replicas != 0 {
 		t.Errorf("expected 0 replicas, got %d", *d.Spec.Replicas)
 	}
@@ -80,7 +80,7 @@ func TestBuildDeployment_CustomReplicas(t *testing.T) {
 
 func TestBuildDeployment_EnvVarsFromSecret(t *testing.T) {
 	site := newTestSite()
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	keys := make(map[string]bool)
@@ -103,7 +103,7 @@ func TestBuildDeployment_MtuEnvVar(t *testing.T) {
 	site := newTestSite()
 	site.Spec.Newt.Mtu = 1420
 
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	found := false
@@ -119,7 +119,7 @@ func TestBuildDeployment_MtuEnvVar(t *testing.T) {
 
 func TestBuildDeployment_SecurityContext(t *testing.T) {
 	site := newTestSite()
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	if c.SecurityContext == nil {
@@ -142,7 +142,7 @@ func TestBuildDeployment_CustomResources(t *testing.T) {
 		},
 	}
 
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	cpu := c.Resources.Requests[corev1.ResourceCPU]
@@ -155,7 +155,7 @@ func TestBuildDeployment_NativeInterface_SecurityContext(t *testing.T) {
 	site := newTestSite()
 	site.Spec.Newt.UseNativeInterface = true
 
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	if c.SecurityContext == nil {
@@ -193,7 +193,7 @@ func TestBuildDeployment_NativeInterface_HostNetworkAndPID(t *testing.T) {
 	site.Spec.Newt.HostNetwork = true
 	site.Spec.Newt.HostPID = true
 
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 
 	if !d.Spec.Template.Spec.HostNetwork {
 		t.Error("expected HostNetwork=true")
@@ -208,7 +208,7 @@ func TestBuildDeployment_NativeInterface_HostNetworkIgnoredWithoutNative(t *test
 	site.Spec.Newt.HostNetwork = true
 	site.Spec.Newt.HostPID = true
 
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 
 	if d.Spec.Template.Spec.HostNetwork {
 		t.Error("expected HostNetwork=false when UseNativeInterface is false")
@@ -220,7 +220,7 @@ func TestBuildDeployment_NativeInterface_HostNetworkIgnoredWithoutNative(t *test
 
 func TestBuildDeployment_Labels(t *testing.T) {
 	site := newTestSite()
-	d := buildDeployment(site, "my-site-newt-credentials")
+	d := buildDeployment(site, "my-site-newt-credentials", "test-ns")
 
 	labels := d.Labels
 	if labels["app.kubernetes.io/name"] != "newtsite" {
@@ -264,7 +264,7 @@ func TestBuildDeployment_OptionalEnvVars(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			site := newTestSite()
 			tt.mutate(site)
-			d := buildDeployment(site, "creds")
+			d := buildDeployment(site, "creds", "test-ns")
 			env, ok := findEnv(d.Spec.Template.Spec.Containers[0].Env, tt.envName)
 			if !ok {
 				t.Fatalf("expected env var %s to be set", tt.envName)
@@ -279,7 +279,7 @@ func TestBuildDeployment_OptionalEnvVars(t *testing.T) {
 func TestBuildDeployment_DefaultInterfaceOmitted(t *testing.T) {
 	site := newTestSite()
 	site.Spec.Newt.Interface = "newt" // default value
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	if _, ok := findEnv(d.Spec.Template.Spec.Containers[0].Env, "INTERFACE"); ok {
 		t.Error("expected INTERFACE env var to be omitted when set to default 'newt'")
 	}
@@ -288,7 +288,7 @@ func TestBuildDeployment_DefaultInterfaceOmitted(t *testing.T) {
 func TestBuildDeployment_Metrics(t *testing.T) {
 	site := newTestSite()
 	site.Spec.Newt.Metrics = &pangolinv1alpha1.NewtMetricsSpec{Port: 8080}
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	env, ok := findEnv(c.Env, "NEWT_ADMIN_ADDR")
@@ -306,7 +306,7 @@ func TestBuildDeployment_Metrics(t *testing.T) {
 func TestBuildDeployment_MetricsCustomAdminAddr(t *testing.T) {
 	site := newTestSite()
 	site.Spec.Newt.Metrics = &pangolinv1alpha1.NewtMetricsSpec{AdminAddr: "127.0.0.1:9999"}
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	env, ok := findEnv(d.Spec.Template.Spec.Containers[0].Env, "NEWT_ADMIN_ADDR")
 	if !ok {
 		t.Fatal("expected NEWT_ADMIN_ADDR env var")
@@ -319,7 +319,7 @@ func TestBuildDeployment_MetricsCustomAdminAddr(t *testing.T) {
 func TestBuildDeployment_ExtraEnvOverrides(t *testing.T) {
 	site := newTestSite()
 	site.Spec.Newt.ExtraEnv = []corev1.EnvVar{{Name: "LOG_LEVEL", Value: debugLevel}}
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	envs := d.Spec.Template.Spec.Containers[0].Env
 	// The last LOG_LEVEL should be the override.
 	last := ""
@@ -335,13 +335,13 @@ func TestBuildDeployment_ExtraEnvOverrides(t *testing.T) {
 
 func TestBuildDeployment_PodAnnotations(t *testing.T) {
 	site := newTestSite()
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	if d.Spec.Template.Annotations != nil {
 		t.Error("expected nil annotations when PodAnnotations is empty")
 	}
 
 	site.Spec.Newt.PodAnnotations = map[string]string{"custom": "value"}
-	d = buildDeployment(site, "creds")
+	d = buildDeployment(site, "creds", "test-ns")
 	if d.Spec.Template.Annotations["custom"] != "value" {
 		t.Errorf("expected custom annotation, got %v", d.Spec.Template.Annotations)
 	}
@@ -355,7 +355,7 @@ func TestBuildDeployment_SchedulingFields(t *testing.T) {
 		NodeAffinity: &corev1.NodeAffinity{},
 	}
 
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	pod := d.Spec.Template.Spec
 
 	if pod.NodeSelector["zone"] != "us-east" {
@@ -376,7 +376,7 @@ func TestBuildDeployment_ExtraContainersAndVolumes(t *testing.T) {
 	site.Spec.Newt.ExtraVolumes = []corev1.Volume{{Name: "data"}}
 	site.Spec.Newt.ExtraVolumeMounts = []corev1.VolumeMount{{Name: "data", MountPath: "/data"}}
 
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	pod := d.Spec.Template.Spec
 
 	if len(pod.InitContainers) != 1 || pod.InitContainers[0].Name != "init" {
@@ -398,7 +398,7 @@ func TestBuildDeployment_CustomSecurityContextOverride(t *testing.T) {
 	customUser := int64(1000)
 	site.Spec.Newt.SecurityContext = &corev1.SecurityContext{RunAsUser: &customUser}
 
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	if c.SecurityContext == nil || c.SecurityContext.RunAsUser == nil || *c.SecurityContext.RunAsUser != 1000 {
@@ -411,7 +411,7 @@ func TestBuildDeployment_CustomSecurityContextOverride(t *testing.T) {
 
 func TestBuildDeployment_DefaultSecurityContext_DropAllCaps(t *testing.T) {
 	site := newTestSite()
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	c := d.Spec.Template.Spec.Containers[0]
 
 	if c.SecurityContext.Capabilities == nil || len(c.SecurityContext.Capabilities.Drop) == 0 {
@@ -427,7 +427,7 @@ func TestBuildDeployment_DefaultSecurityContext_DropAllCaps(t *testing.T) {
 
 func TestBuildDeployment_DefaultSecurityContext_PodLevel(t *testing.T) {
 	site := newTestSite()
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	ps := d.Spec.Template.Spec.SecurityContext
 
 	if ps == nil {
@@ -444,7 +444,7 @@ func TestBuildDeployment_DefaultSecurityContext_PodLevel(t *testing.T) {
 func TestBuildDeployment_LogLevel(t *testing.T) {
 	site := newTestSite()
 	site.Spec.Newt.LogLevel = debugLevel
-	d := buildDeployment(site, "creds")
+	d := buildDeployment(site, "creds", "test-ns")
 	env, ok := findEnv(d.Spec.Template.Spec.Containers[0].Env, "LOG_LEVEL")
 	if !ok {
 		t.Fatal("expected LOG_LEVEL env var")

@@ -14,7 +14,7 @@ spec:
     shortNames:
     - pubr
     singular: publicresource
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.phase

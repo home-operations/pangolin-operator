@@ -286,7 +286,7 @@ const (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced,shortName=nsite
+// +kubebuilder:resource:scope=Cluster,shortName=nsite
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Site ID",type="string",JSONPath=".status.niceId"
 // +kubebuilder:printcolumn:name="Online",type="boolean",JSONPath=".status.online"

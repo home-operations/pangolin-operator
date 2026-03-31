@@ -45,9 +45,10 @@ const (
 
 type Reconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	PangolinClient pangolin.API
-	NewtEndpoint   string
+	Scheme            *runtime.Scheme
+	PangolinClient    pangolin.API
+	NewtEndpoint      string
+	OperatorNamespace string
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -144,7 +145,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 			return ctrl.Result{}, err
 		}
 		var dep appsv1.Deployment
-		if err := r.Get(ctx, client.ObjectKey{Namespace: site.Namespace, Name: site.Name}, &dep); err == nil {
+		if err := r.Get(ctx, client.ObjectKey{Namespace: r.OperatorNamespace, Name: site.Name}, &dep); err == nil {
 			online = dep.Status.ReadyReplicas > 0
 		}
 	}
@@ -226,7 +227,7 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
-			Namespace: site.Namespace,
+			Namespace: r.OperatorNamespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "pangolin-operator",
 			},
@@ -287,7 +288,7 @@ func (r *Reconciler) ensureServiceAccount(ctx context.Context, site *pangolinv1a
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      site.Name + "-newtsite",
-			Namespace: site.Namespace,
+			Namespace: r.OperatorNamespace,
 		},
 	}
 	if err := controllerutil.SetControllerReference(site, sa, r.Scheme); err != nil {
@@ -299,7 +300,7 @@ func (r *Reconciler) ensureServiceAccount(ctx context.Context, site *pangolinv1a
 
 func (r *Reconciler) ensureDeployment(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {
 	secretName := site.Name + "-newt-credentials"
-	desired := buildDeployment(site, secretName)
+	desired := buildDeployment(site, secretName, r.OperatorNamespace)
 	if err := controllerutil.SetControllerReference(site, desired, r.Scheme); err != nil {
 		return fmt.Errorf("set controller reference on deployment: %w", err)
 	}

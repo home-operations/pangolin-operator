@@ -16,7 +16,7 @@ const defaultMTU = 1280
 
 // buildDeployment constructs the appsv1.Deployment for the newt tunnel pod.
 // secretName is the name of the Secret containing PANGOLIN_ENDPOINT, NEWT_ID, NEWT_SECRET.
-func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1.Deployment {
+func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName, namespace string) *appsv1.Deployment {
 	spec := site.Spec.Newt
 
 	image := spec.Image
@@ -172,7 +172,7 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName string) *appsv1
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      site.Name,
-			Namespace: site.Namespace,
+			Namespace: namespace,
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{

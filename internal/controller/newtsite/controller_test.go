@@ -53,7 +53,7 @@ func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
 		APIKey:   "key",
 		OrgID:    "org1",
 	})
-	r := &Reconciler{Client: cl, Scheme: testutil.NewScheme(), PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: testutil.NewScheme(), PangolinClient: pc, OperatorNamespace: "default"}
 
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
@@ -95,7 +95,7 @@ func TestUpdateSite_SkipsAPIWhenNameUnchanged(t *testing.T) {
 	}
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 
-	r := &Reconciler{Client: testutil.NewClientBuilder(testutil.NewScheme()).Build(), Scheme: testutil.NewScheme(), PangolinClient: pc}
+	r := &Reconciler{Client: testutil.NewClientBuilder(testutil.NewScheme()).Build(), Scheme: testutil.NewScheme(), PangolinClient: pc, OperatorNamespace: "default"}
 	if err := r.updateSite(context.Background(), site); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 		Build()
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
 	})
@@ -210,7 +210,7 @@ func TestReconcile_Update_CallsUpdateSiteOnGenerationChange(t *testing.T) {
 		Build()
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
 	})
@@ -257,7 +257,7 @@ func TestCleanup_DeletesSiteAndRemovesFinalizer(t *testing.T) {
 		Build()
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
 	})
@@ -314,7 +314,7 @@ func TestReconcile_DriftDetection_ResetsSiteIDOn404(t *testing.T) {
 		Build()
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
 	})
@@ -367,7 +367,7 @@ func TestReconcile_UpdateSite_Handles404(t *testing.T) {
 		Build()
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
 	})
@@ -422,7 +422,7 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 		Build()
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
 	})
@@ -465,7 +465,7 @@ func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {
 		Build()
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
 	})

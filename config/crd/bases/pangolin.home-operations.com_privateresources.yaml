@@ -14,7 +14,7 @@ spec:
     shortNames:
     - privr
     singular: privateresource
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.phase
