@@ -345,13 +345,23 @@ type listResourcesResponse struct {
 	Resources []ResourceItem `json:"resources"`
 }
 
+const listPageSize = 100
+
 func (c *Client) ListResources(ctx context.Context, query string) ([]ResourceItem, error) {
-	u := fmt.Sprintf("%s/org/%s/resources?pageSize=100&query=%s", c.apiBase(), c.orgID, neturl.QueryEscape(query))
-	var out listResourcesResponse
-	if err := c.do(ctx, http.MethodGet, u, nil, &out); err != nil {
-		return nil, fmt.Errorf("ListResources: %w", err)
+	var all []ResourceItem
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/org/%s/resources?pageSize=%d&page=%d&query=%s",
+			c.apiBase(), c.orgID, listPageSize, page, neturl.QueryEscape(query))
+		var out listResourcesResponse
+		if err := c.do(ctx, http.MethodGet, u, nil, &out); err != nil {
+			return nil, fmt.Errorf("ListResources: %w", err)
+		}
+		all = append(all, out.Resources...)
+		if len(out.Resources) < listPageSize {
+			break
+		}
 	}
-	return out.Resources, nil
+	return all, nil
 }
 
 type UpdateResourceRequest struct {
@@ -362,7 +372,7 @@ type UpdateResourceRequest struct {
 	BlockAccess           *bool   `json:"blockAccess,omitempty"`
 	EmailWhitelistEnabled *bool   `json:"emailWhitelistEnabled,omitempty"`
 	ApplyRules            *bool   `json:"applyRules,omitempty"`
-	Enabled               bool    `json:"enabled,omitempty"`
+	Enabled               *bool   `json:"enabled,omitempty"`
 	StickySession         *bool   `json:"stickySession,omitempty"`
 	TlsServerName         *string `json:"tlsServerName,omitempty"`
 	SetHostHeader         *string `json:"setHostHeader,omitempty"`
@@ -491,12 +501,20 @@ type listSiteResourcesResponse struct {
 }
 
 func (c *Client) ListSiteResources(ctx context.Context, query string) ([]SiteResourceItem, error) {
-	u := fmt.Sprintf("%s/org/%s/site-resources?pageSize=100&query=%s", c.apiBase(), c.orgID, neturl.QueryEscape(query))
-	var out listSiteResourcesResponse
-	if err := c.do(ctx, http.MethodGet, u, nil, &out); err != nil {
-		return nil, fmt.Errorf("ListSiteResources: %w", err)
+	var all []SiteResourceItem
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/org/%s/site-resources?pageSize=%d&page=%d&query=%s",
+			c.apiBase(), c.orgID, listPageSize, page, neturl.QueryEscape(query))
+		var out listSiteResourcesResponse
+		if err := c.do(ctx, http.MethodGet, u, nil, &out); err != nil {
+			return nil, fmt.Errorf("ListSiteResources: %w", err)
+		}
+		all = append(all, out.SiteResources...)
+		if len(out.SiteResources) < listPageSize {
+			break
+		}
 	}
-	return out.SiteResources, nil
+	return all, nil
 }
 
 type UpdateSiteResourceRequest struct {
