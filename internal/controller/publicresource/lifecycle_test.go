@@ -462,6 +462,11 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 50, NiceID: "r-50"})
 	})
+	mux.HandleFunc("/v1/resource/50", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
 	mux.HandleFunc("/v1/resource/50/target", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 100})
 	})

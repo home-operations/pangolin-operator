@@ -325,12 +325,18 @@ func BuildHTTPRouteSpec(route *gatewayv1.HTTPRoute, hostname string, annotations
 		Method:   targetMethod,
 	}, annotations, prefix)
 
+	enabled := true
+	if v, ok := annotations[prefix+"/enabled"]; ok {
+		enabled = isTruthy(v)
+	}
+
 	spec := pangolinv1alpha1.PublicResourceSpec{
 		SiteRef:       siteRef,
 		Name:          displayName,
 		Protocol:      methodHTTP,
 		FullDomain:    hostname,
 		Ssl:           ssl,
+		Enabled:       enabled,
 		HostHeader:    annotations[prefix+"/host-header"],
 		TlsServerName: tlsServerName,
 		Headers:       buildHeaders(annotations, prefix),
@@ -338,9 +344,6 @@ func BuildHTTPRouteSpec(route *gatewayv1.HTTPRoute, hostname string, annotations
 		Maintenance:   buildMaintenance(annotations, prefix),
 		Rules:         buildRules(annotations, prefix, cfg),
 		Targets:       []pangolinv1alpha1.PublicTargetSpec{target},
-	}
-	if v, ok := annotations[prefix+"/enabled"]; ok {
-		spec.Enabled = isTruthy(v)
 	}
 	return spec, nil
 }
@@ -540,17 +543,20 @@ func BuildTCPRouteSpec(route *gatewayv1alpha2.TCPRoute, annotations map[string]s
 		displayName = v
 	}
 
+	enabled := true
+	if v, ok := annotations[prefix+"/enabled"]; ok {
+		enabled = isTruthy(v)
+	}
+
 	spec := pangolinv1alpha1.PublicResourceSpec{
 		SiteRef:   siteRef,
 		Name:      displayName,
 		Protocol:  "tcp",
 		ProxyPort: proxyPort,
+		Enabled:   enabled,
 		Targets: []pangolinv1alpha1.PublicTargetSpec{
 			{Hostname: targetHostname, Port: targetPort},
 		},
-	}
-	if v, ok := annotations[prefix+"/enabled"]; ok {
-		spec.Enabled = isTruthy(v)
 	}
 	return spec, nil
 }

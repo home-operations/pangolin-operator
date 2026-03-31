@@ -299,10 +299,15 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 		return err
 	}
 
+	updateReq := pangolin.UpdateResourceRequest{
+		Name:    res.Spec.Name,
+		Enabled: &res.Spec.Enabled,
+	}
 	if isHTTP {
-		if err := r.PangolinClient.UpdateResource(ctx, created.ResourceID, buildHTTPUpdateRequest(res.Spec)); err != nil {
-			return fmt.Errorf("UpdateResource (HTTP settings): %w", err)
-		}
+		updateReq = buildHTTPUpdateRequest(res.Spec)
+	}
+	if err := r.PangolinClient.UpdateResource(ctx, created.ResourceID, updateReq); err != nil {
+		return fmt.Errorf("UpdateResource (post-create settings): %w", err)
 	}
 
 	targetIDs, err := r.createTargets(ctx, created.ResourceID, siteID, res.Spec.Targets)

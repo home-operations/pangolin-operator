@@ -488,6 +488,11 @@ func TestReconcile_DriftDetection_RecreatesWhenNotInList(t *testing.T) {
 		createResourceCalled = true
 		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 42, NiceID: "res-42"})
 	})
+	mux.HandleFunc("/v1/resource/42", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
 	mux.HandleFunc("/v1/resource/42/target", func(w http.ResponseWriter, r *http.Request) {
 		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 100})
 	})
