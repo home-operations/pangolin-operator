@@ -278,6 +278,162 @@ func TestCleanup_DeletesSiteAndRemovesFinalizer(t *testing.T) {
 	}
 }
 
+// TestReconcile_DriftDetection_ResetsSiteIDOn404 verifies that when the Pangolin
+// site no longer exists, SiteID is reset and reconcile requeues for re-creation.
+func TestReconcile_DriftDetection_ResetsSiteIDOn404(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	site := &pangolinv1alpha1.NewtSite{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-site",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{NewtSiteFinalizer},
+		},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+		Status: pangolinv1alpha1.NewtSiteStatus{
+			SiteID:             42,
+			ObservedGeneration: 1, // generation matches — steady state
+			NewtSecretName:     "my-site-newt-credentials",
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(site).
+		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Requeue {
+		t.Error("expected Requeue=true after drift detection")
+	}
+
+	var updated pangolinv1alpha1.NewtSite
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-site", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("failed to get site: %v", err)
+	}
+	if updated.Status.SiteID != 0 {
+		t.Errorf("expected SiteID to be reset to 0, got %d", updated.Status.SiteID)
+	}
+}
+
+// TestReconcile_UpdateSite_Handles404 verifies that when updateSite encounters a 404,
+// the SiteID is reset and reconcile requeues for re-creation.
+func TestReconcile_UpdateSite_Handles404(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	site := &pangolinv1alpha1.NewtSite{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-site",
+			Namespace:  "default",
+			Generation: 2,
+			Finalizers: []string{NewtSiteFinalizer},
+		},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "new-name"},
+		Status: pangolinv1alpha1.NewtSiteStatus{
+			SiteID:             42,
+			ObservedGeneration: 1, // generation mismatch triggers update path
+			NewtSecretName:     "my-site-newt-credentials",
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(site).
+		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Requeue {
+		t.Error("expected Requeue=true after 404 on update")
+	}
+
+	var updated pangolinv1alpha1.NewtSite
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-site", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("failed to get site: %v", err)
+	}
+	if updated.Status.SiteID != 0 {
+		t.Errorf("expected SiteID to be reset to 0, got %d", updated.Status.SiteID)
+	}
+}
+
+// TestReconcile_PeriodicResync verifies that a successful reconcile always returns
+// a RequeueAfter interval for periodic re-sync.
+func TestReconcile_PeriodicResync(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResponse{SiteID: 42, Name: "my-site"})
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	site := &pangolinv1alpha1.NewtSite{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-site",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{NewtSiteFinalizer},
+		},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+		Status: pangolinv1alpha1.NewtSiteStatus{
+			SiteID:             42,
+			ObservedGeneration: 1,
+			NewtSecretName:     "my-site-newt-credentials",
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(site).
+		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter to be set for periodic re-sync")
+	}
+}
+
 // TestCleanup_FailsAndRetriesOnDeleteError verifies that a Pangolin API failure
 // during cleanup is returned as an error (fail-and-retry, not log-and-continue).
 func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {

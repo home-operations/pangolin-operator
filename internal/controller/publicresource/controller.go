@@ -24,6 +24,7 @@ import (
 
 const (
 	PublicResourceFinalizer = "pangolin.home-operations.com/publicresource-finalizer"
+	resyncInterval          = 10 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=publicresources,verbs=get;list;watch;create;update;patch;delete
@@ -92,6 +93,13 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 				})
 				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}
+			if pangolin.IsBadRequest(err) {
+				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+					s.Phase = pangolinv1alpha1.PublicResourcePhaseError
+					setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
+				})
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
 			})
@@ -117,6 +125,24 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 			})
 			return ctrl.Result{}, err
 		}
+	} else if res.Status.ResourceID != 0 {
+		// Steady-state drift check — update path already calls GetResource.
+		if _, err := r.PangolinClient.GetResource(ctx, res.Status.ResourceID); err != nil {
+			if pangolin.IsNotFound(err) {
+				logger.Info("Pangolin resource no longer exists, resetting for re-creation", "resourceID", res.Status.ResourceID)
+				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+					s.ResourceID = 0
+					s.NiceID = ""
+					s.FullDomain = ""
+					s.TargetIDs = []int{}
+					s.RuleIDs = []int{}
+				}); patchErr != nil {
+					return ctrl.Result{}, patchErr
+				}
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("drift check GetResource: %w", err)
+		}
 	}
 
 	if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
@@ -128,7 +154,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 	}
 
 	logger.V(1).Info("PublicResource reconciled", "resourceID", res.Status.ResourceID)
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: resyncInterval}, nil
 }
 
 func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.PublicResource, siteID int) error {
@@ -186,6 +212,11 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 		s.FullDomain = created.FullDomain
 		s.Phase = pangolinv1alpha1.PublicResourcePhaseCreating
 	}); err != nil {
+		// Rollback to avoid orphaned Pangolin resource.
+		logger.Error(err, "failed to persist ResourceID, rolling back Pangolin resource", "resourceID", created.ResourceID)
+		if delErr := r.PangolinClient.DeleteResource(ctx, created.ResourceID); delErr != nil {
+			logger.Error(delErr, "failed to roll back Pangolin resource", "resourceID", created.ResourceID)
+		}
 		return err
 	}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
@@ -273,20 +304,25 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 		return fmt.Errorf("UpdateResource: %w", err)
 	}
 
+	// Create new targets/rules before deleting old ones to avoid dropping traffic.
 	if hashTargets(res.Spec.Targets) != res.Status.TargetsHash {
-		for _, id := range res.Status.TargetIDs {
-			if err := r.PangolinClient.DeleteTarget(ctx, id); err != nil && !pangolin.IsNotFound(err) {
-				return fmt.Errorf("DeleteTarget(%d): %w", id, err)
-			}
-		}
 		targetIDs, err := r.createTargets(ctx, res.Status.ResourceID, siteID, res.Spec.Targets)
 		if err != nil {
 			if len(targetIDs) > 0 {
 				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-					s.TargetIDs = targetIDs
+					s.TargetIDs = append(res.Status.TargetIDs, targetIDs...)
 				})
 			}
 			return err
+		}
+		for _, id := range res.Status.TargetIDs {
+			if err := r.PangolinClient.DeleteTarget(ctx, id); err != nil && !pangolin.IsNotFound(err) {
+				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+					s.TargetIDs = targetIDs
+					s.TargetsHash = hashTargets(res.Spec.Targets)
+				})
+				return fmt.Errorf("DeleteTarget(%d): %w", id, err)
+			}
 		}
 		if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			s.TargetIDs = targetIDs
@@ -297,19 +333,23 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 	}
 
 	if hashRules(res.Spec.Rules) != res.Status.RulesHash {
-		for _, id := range res.Status.RuleIDs {
-			if err := r.PangolinClient.DeleteRule(ctx, id); err != nil && !pangolin.IsNotFound(err) {
-				return fmt.Errorf("DeleteRule(%d): %w", id, err)
-			}
-		}
 		ruleIDs, err := r.createRules(ctx, res.Status.ResourceID, res.Spec.Rules)
 		if err != nil {
 			if len(ruleIDs) > 0 {
 				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-					s.RuleIDs = ruleIDs
+					s.RuleIDs = append(res.Status.RuleIDs, ruleIDs...)
 				})
 			}
 			return err
+		}
+		for _, id := range res.Status.RuleIDs {
+			if err := r.PangolinClient.DeleteRule(ctx, id); err != nil && !pangolin.IsNotFound(err) {
+				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+					s.RuleIDs = ruleIDs
+					s.RulesHash = hashRules(res.Spec.Rules)
+				})
+				return fmt.Errorf("DeleteRule(%d): %w", id, err)
+			}
 		}
 		if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			s.RuleIDs = ruleIDs

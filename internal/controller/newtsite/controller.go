@@ -71,11 +71,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return r.reconcile(ctx, &site)
 }
 
+const resyncInterval = 10 * time.Minute
+
 func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtSite) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if site.Status.SiteID == 0 {
 		if err := r.createSite(ctx, site); err != nil {
+			if pangolin.IsBadRequest(err) {
+				_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+					s.Phase = pangolinv1alpha1.NewtSitePhaseError
+					setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), site.Generation)
+				})
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
 			_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), site.Generation)
 			})
@@ -86,12 +95,40 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 		}
 	} else if site.Generation != site.Status.ObservedGeneration {
 		if err := r.updateSite(ctx, site); err != nil {
+			if pangolin.IsNotFound(err) {
+				logger.Info("Pangolin site no longer exists, will re-create", "siteID", site.Status.SiteID)
+				if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+					s.SiteID = 0
+					s.NiceID = ""
+					s.NewtSecretName = ""
+				}); patchErr != nil {
+					return ctrl.Result{}, patchErr
+				}
+				return ctrl.Result{Requeue: true}, nil
+			}
 			_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), site.Generation)
 			})
 			return ctrl.Result{}, err
 		}
+	} else if site.Status.SiteID != 0 {
+		// Steady-state drift check — update path already calls GetSite.
+		if _, err := r.PangolinClient.GetSite(ctx, site.Status.SiteID); err != nil {
+			if pangolin.IsNotFound(err) {
+				logger.Info("Pangolin site no longer exists, resetting for re-creation", "siteID", site.Status.SiteID)
+				if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+					s.SiteID = 0
+					s.NiceID = ""
+					s.NewtSecretName = ""
+				}); patchErr != nil {
+					return ctrl.Result{}, patchErr
+				}
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("drift check GetSite: %w", err)
+		}
 	}
+
 
 	online := false
 	if site.Spec.Type != "local" {
@@ -129,10 +166,12 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 		return ctrl.Result{}, err
 	}
 
+	// Shorter resync for autodiscover sites.
+	interval := resyncInterval
 	if site.Spec.AutoDiscover != nil {
-		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		interval = 5 * time.Minute
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: interval}, nil
 }
 
 func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {
@@ -150,18 +189,21 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 			Type: "local",
 		})
 		if err != nil {
-			if updateErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
-				s.Phase = pangolinv1alpha1.NewtSitePhaseError
-			}); updateErr != nil {
-				logger.Error(updateErr, "Failed to update status to Error after CreateSite failure")
-			}
 			return fmt.Errorf("CreateSite: %w", err)
 		}
 		logger.Info("Pangolin local site created", "siteID", created.SiteID, "niceID", created.NiceID)
-		return r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+		if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 			s.SiteID = created.SiteID
 			s.NiceID = created.NiceID
-		})
+		}); patchErr != nil {
+			// Rollback to avoid orphaned Pangolin site.
+			logger.Error(patchErr, "failed to persist SiteID, rolling back Pangolin site", "siteID", created.SiteID)
+			if delErr := r.PangolinClient.DeleteSite(ctx, created.SiteID); delErr != nil {
+				logger.Error(delErr, "failed to roll back Pangolin site", "siteID", created.SiteID)
+			}
+			return patchErr
+		}
+		return nil
 	}
 
 	defaults, err := r.PangolinClient.PickSiteDefaults(ctx)
@@ -177,11 +219,6 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 		Secret:  defaults.NewtSecret,
 	})
 	if err != nil {
-		if updateErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
-			s.Phase = pangolinv1alpha1.NewtSitePhaseError
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to update status to Error after CreateSite failure")
-		}
 		return fmt.Errorf("CreateSite: %w", err)
 	}
 	logger.Info("Pangolin site created", "siteID", created.SiteID, "niceID", created.NiceID)
@@ -220,11 +257,18 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 		return fmt.Errorf("create/update newt credentials secret: %w", err)
 	}
 
-	return r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+	if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 		s.SiteID = created.SiteID
 		s.NiceID = created.NiceID
 		s.NewtSecretName = secretName
-	})
+	}); patchErr != nil {
+		logger.Error(patchErr, "failed to persist SiteID, rolling back Pangolin site", "siteID", created.SiteID)
+		if delErr := r.PangolinClient.DeleteSite(ctx, created.SiteID); delErr != nil {
+			logger.Error(delErr, "failed to roll back Pangolin site", "siteID", created.SiteID)
+		}
+		return patchErr
+	}
+	return nil
 }
 
 func (r *Reconciler) updateSite(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {

@@ -466,6 +466,122 @@ func TestReconcile_409Conflict_RequeuesWithCondition(t *testing.T) {
 	}
 }
 
+// TestReconcile_DriftDetection_ResetsResourceIDOn404 verifies that when the Pangolin
+// resource no longer exists, ResourceID is reset and reconcile requeues for re-creation.
+func TestReconcile_DriftDetection_ResetsResourceIDOn404(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PublicResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-res",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{PublicResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PublicResourceSpec{
+			SiteRef:  "my-site",
+			Name:     "my-res",
+			Protocol: "tcp",
+			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}},
+		},
+		Status: pangolinv1alpha1.PublicResourceStatus{
+			ResourceID:         7,
+			ObservedGeneration: 1, // steady state
+			TargetIDs:          []int{99},
+			TargetsHash:        hashTargets([]pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}}),
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-res", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Requeue {
+		t.Error("expected Requeue=true after drift detection")
+	}
+
+	var updated pangolinv1alpha1.PublicResource
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-res", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("failed to get resource: %v", err)
+	}
+	if updated.Status.ResourceID != 0 {
+		t.Errorf("expected ResourceID to be reset to 0, got %d", updated.Status.ResourceID)
+	}
+}
+
+// TestReconcile_PeriodicResync verifies that a successful reconcile returns
+// a RequeueAfter interval for periodic re-sync.
+func TestReconcile_PeriodicResync(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			testutil.PangolinResponse(t, w, pangolin.GetResourceResponse{ResourceID: 7, Name: "my-res"})
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	targets := []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}}
+	res := &pangolinv1alpha1.PublicResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-res",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{PublicResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PublicResourceSpec{
+			SiteRef:  "my-site",
+			Name:     "my-res",
+			Protocol: "tcp",
+			Targets:  targets,
+		},
+		Status: pangolinv1alpha1.PublicResourceStatus{
+			ResourceID:         7,
+			ObservedGeneration: 1,
+			TargetIDs:          []int{99},
+			TargetsHash:        hashTargets(targets),
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-res", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter to be set for periodic re-sync")
+	}
+}
+
 // TestReconcile_CreateResource_TargetFailure verifies that when CreateTarget fails
 // after CreateResource succeeds, the resourceID is still persisted in status so that
 // re-reconciliation doesn't create a duplicate resource.

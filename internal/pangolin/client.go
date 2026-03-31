@@ -44,6 +44,17 @@ func IsConflict(err error) bool {
 	return errors.As(err, &e)
 }
 
+type ErrBadRequest struct {
+	Message string
+}
+
+func (e *ErrBadRequest) Error() string { return e.Message }
+
+func IsBadRequest(err error) bool {
+	var e *ErrBadRequest
+	return errors.As(err, &e)
+}
+
 type API interface {
 	// Sites
 	PickSiteDefaults(ctx context.Context) (*PickSiteDefaultsResponse, error)
@@ -132,6 +143,16 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 	// for missing resources rather than a JSON envelope.
 	if resp.StatusCode == http.StatusNotFound {
 		return &ErrNotFound{Message: "not found (HTTP 404)"}
+	}
+
+	if resp.StatusCode == http.StatusBadRequest {
+		var body struct {
+			Message string `json:"message"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil && body.Message != "" {
+			return &ErrBadRequest{Message: fmt.Sprintf("bad request (HTTP 400): %s", body.Message)}
+		}
+		return &ErrBadRequest{Message: "bad request (HTTP 400)"}
 	}
 
 	if resp.StatusCode == http.StatusConflict {

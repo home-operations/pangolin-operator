@@ -241,6 +241,119 @@ func TestReconcile_Update_CallsUpdateOnGenerationChange(t *testing.T) {
 	}
 }
 
+// TestReconcile_DriftDetection_ResetsSiteResourceIDOn404 verifies that when the Pangolin
+// site resource no longer exists, SiteResourceID is reset and reconcile requeues for re-creation.
+func TestReconcile_DriftDetection_ResetsSiteResourceIDOn404(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PrivateResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-priv",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{PrivateResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PrivateResourceSpec{
+			SiteRef:     "my-site",
+			Name:        "my-priv",
+			Mode:        "host",
+			Destination: "10.0.0.5",
+		},
+		Status: pangolinv1alpha1.PrivateResourceStatus{
+			SiteResourceID:     55,
+			ObservedGeneration: 1, // steady state
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-priv", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Requeue {
+		t.Error("expected Requeue=true after drift detection")
+	}
+
+	var updated pangolinv1alpha1.PrivateResource
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-priv", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("failed to get resource: %v", err)
+	}
+	if updated.Status.SiteResourceID != 0 {
+		t.Errorf("expected SiteResourceID to be reset to 0, got %d", updated.Status.SiteResourceID)
+	}
+}
+
+// TestReconcile_PeriodicResync verifies that a successful reconcile returns
+// a RequeueAfter interval for periodic re-sync.
+func TestReconcile_PeriodicResync(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResourceResponse{
+				SiteResourceID: 55, Name: "my-priv", Mode: "host", Destination: "10.0.0.5",
+			})
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PrivateResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-priv",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{PrivateResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PrivateResourceSpec{
+			SiteRef:     "my-site",
+			Name:        "my-priv",
+			Mode:        "host",
+			Destination: "10.0.0.5",
+		},
+		Status: pangolinv1alpha1.PrivateResourceStatus{
+			SiteResourceID:     55,
+			ObservedGeneration: 1,
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "my-priv", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter to be set for periodic re-sync")
+	}
+}
+
 // TestCleanup_DeletesSiteResourceAndRemovesFinalizer verifies full deletion path.
 func TestCleanup_DeletesSiteResourceAndRemovesFinalizer(t *testing.T) {
 	deleteCalled := false
