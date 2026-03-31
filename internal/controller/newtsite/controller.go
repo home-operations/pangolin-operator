@@ -29,6 +29,7 @@ import (
 
 const (
 	NewtSiteFinalizer = "pangolin.home-operations.com/newtsite-finalizer"
+	reconcileTimeout  = 2 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=newtsites,verbs=get;list;watch;create;update;patch;delete
@@ -61,7 +62,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if site.DeletionTimestamp != nil {
-		return r.cleanup(ctx, &site)
+		return ctrl.Result{}, r.cleanup(ctx, &site)
 	}
 
 	if !controllerutil.ContainsFinalizer(&site, NewtSiteFinalizer) {
@@ -69,7 +70,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, r.Update(ctx, &site)
 	}
 
-	return r.reconcile(ctx, &site)
+	reconcileCtx, cancel := context.WithTimeout(ctx, reconcileTimeout)
+	defer cancel()
+	return r.reconcile(reconcileCtx, &site)
 }
 
 const resyncInterval = 10 * time.Minute
@@ -320,22 +323,22 @@ func (r *Reconciler) ensureDeployment(ctx context.Context, site *pangolinv1alpha
 	return err
 }
 
-func (r *Reconciler) cleanup(ctx context.Context, site *pangolinv1alpha1.NewtSite) (ctrl.Result, error) {
+func (r *Reconciler) cleanup(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Cleaning up NewtSite", "name", site.Name)
 
 	if site.Status.SiteID != 0 {
 		if err := r.PangolinClient.DeleteSite(ctx, site.Status.SiteID); err != nil && !pangolin.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete Pangolin site %d: %w", site.Status.SiteID, err)
+			return fmt.Errorf("delete Pangolin site %d: %w", site.Status.SiteID, err)
 		}
 		logger.Info("Deleted Pangolin site", "siteID", site.Status.SiteID)
 	}
 
 	controllerutil.RemoveFinalizer(site, NewtSiteFinalizer)
 	if err := r.Update(ctx, site); err != nil {
-		return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+		return fmt.Errorf("remove finalizer: %w", err)
 	}
-	return ctrl.Result{}, nil
+	return nil
 }
 
 // patchStatus applies status mutations via a typed merge-from patch.

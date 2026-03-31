@@ -81,6 +81,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
+	hadID := res.Status.SiteResourceID != 0
 	if err := r.ensureExists(ctx, res, site.Status.SiteID); err != nil {
 		if pangolin.IsBadRequest(err) {
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
@@ -94,11 +95,16 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 		})
 		return ctrl.Result{}, err
 	}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
-		return ctrl.Result{}, err
+
+	// After create/adopt the informer cache may still hold stale status;
+	// only re-fetch and attempt update for previously-existing resources.
+	if hadID {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
-	if res.Generation != res.Status.ObservedGeneration {
+	if hadID && res.Status.SiteResourceID != 0 && res.Generation != res.Status.ObservedGeneration {
 		if err := r.updateSiteResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
 				logger.Info("Pangolin site resource no longer exists during update, will retry", "siteResourceID", res.Status.SiteResourceID)

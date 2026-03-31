@@ -85,6 +85,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
+	hadID := res.Status.ResourceID != 0
 	if err := r.ensureExists(ctx, res, site.Status.SiteID); err != nil {
 		if pangolin.IsConflict(err) {
 			logger.Info("Pangolin resource already exists with that domain; manual intervention required", "error", err)
@@ -107,11 +108,16 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 		})
 		return ctrl.Result{}, err
 	}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
-		return ctrl.Result{}, err
+
+	// After create/adopt the informer cache may still hold stale status;
+	// only re-fetch and attempt update for previously-existing resources.
+	if hadID {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
-	if res.Generation != res.Status.ObservedGeneration {
+	if hadID && res.Status.ResourceID != 0 && res.Generation != res.Status.ObservedGeneration {
 		if err := r.updateResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
 				logger.Info("Pangolin resource no longer exists during update, will retry", "resourceID", res.Status.ResourceID)
