@@ -13,9 +13,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
@@ -455,6 +457,7 @@ func setCondition(s *pangolinv1alpha1.PublicResourceStatus, status metav1.Condit
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&pangolinv1alpha1.PublicResource{}).
+		For(&pangolinv1alpha1.PublicResource{},
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }

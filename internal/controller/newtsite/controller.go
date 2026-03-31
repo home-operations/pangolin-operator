@@ -712,7 +712,8 @@ func (r *Reconciler) deleteOwnedResources(ctx context.Context, ownerKind, ownerN
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
-		For(&pangolinv1alpha1.NewtSite{}).
+		For(&pangolinv1alpha1.NewtSite{},
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
