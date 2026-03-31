@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.0.3](https://github.com/home-operations/pangolin-operator/compare/0.0.2...0.0.3) (2026-03-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **container:** Update image alpine/helm (3.17.3 → 4.1.3) ([#11](https://github.com/home-operations/pangolin-operator/issues/11))
+* **github-action:** Update action actions/create-github-app-token (v2.2.2 → v3.0.0) ([#6](https://github.com/home-operations/pangolin-operator/issues/6))
+* **github-action:** Update action azure/setup-helm (v4.3.1 → v5.0.0) ([#7](https://github.com/home-operations/pangolin-operator/issues/7))
+
+### Features
+
+* add tcproutes discovery ([4ae71ad](https://github.com/home-operations/pangolin-operator/commit/4ae71adf016e5cdcf8a5a3b144d16db8e69563b3))
+* **container:** Update image alpine/helm (3.17.3 → 4.1.3) ([#11](https://github.com/home-operations/pangolin-operator/issues/11)) ([ebd5e47](https://github.com/home-operations/pangolin-operator/commit/ebd5e47309f77454ae11fc07c7c8b3ea90cacf19))
+* expose metrics ([6c0e170](https://github.com/home-operations/pangolin-operator/commit/6c0e17029a5b055fb1035b48510d05a24bba52aa))
+* improve reliability of reconciliation ([5ed43b0](https://github.com/home-operations/pangolin-operator/commit/5ed43b0bd201e9eae9e3f36563b2c4baa381b9d5))
+
+
+### Bug Fixes
+
+* **container:** update image woodpeckerci/plugin-docker-buildx (6.0.3 → 6.0.4) ([#3](https://github.com/home-operations/pangolin-operator/issues/3)) ([d8f8afa](https://github.com/home-operations/pangolin-operator/commit/d8f8afa27ff62e2d444e6c958884529f9993296b))
+* **deps:** update kubernetes monorepo (v0.35.1 → v0.35.3) ([#4](https://github.com/home-operations/pangolin-operator/issues/4)) ([ede3c8c](https://github.com/home-operations/pangolin-operator/commit/ede3c8c50177bf3eb3e1edd010949ea58d681fbf))
+* fix linter error ([8133204](https://github.com/home-operations/pangolin-operator/commit/8133204adf8d8218ae24ecfad69e203dda2c32ba))
+* only periodic requeue when autodiscover is enabled ([b15c430](https://github.com/home-operations/pangolin-operator/commit/b15c430d4f71f370cb58de255928a757f646c4b2))
+* pod annotations incorrectly defaulting to labels map ([9ab9add](https://github.com/home-operations/pangolin-operator/commit/9ab9add4b760639e1be918abdbbbac60e360de5f))
+* reconcile labels on existing autodiscovered PublicResources ([45ca2c3](https://github.com/home-operations/pangolin-operator/commit/45ca2c3a9113e635af499b6f95c670c425024424))
+* replace fragile string replacement in NOTES.txt with explicit labels ([f90f6bc](https://github.com/home-operations/pangolin-operator/commit/f90f6bc4230f63ae10f31b71ac6fdeb103bb2896))
+* skip creating credentials secret when values are empty ([47283bb](https://github.com/home-operations/pangolin-operator/commit/47283bb8e51144c2a56883391d783ae72f372ba2))
+
+
+### Documentation
+
+* fix incorrect helm values, mtu default, and private resource mode in readme ([5476d0d](https://github.com/home-operations/pangolin-operator/commit/5476d0d37c0af27de6eb7c5f0faa0f89beeecb0c))
+
+
+### Miscellaneous Chores
+
+* add .helmignore ([9694990](https://github.com/home-operations/pangolin-operator/commit/9694990974644b82e9af0a25cb2dba8a2da7827b))
+* add consistent yaml document separator to servicemonitor template ([4cdf08f](https://github.com/home-operations/pangolin-operator/commit/4cdf08faf190fe917a079d2bb68a4b3e1fa76655))
+* add default resource requests and limits ([94ee495](https://github.com/home-operations/pangolin-operator/commit/94ee49518c8e98f11091ab9ca7833bb71831ccd3))
+* add helm chart NOTES.txt with post-install guidance ([270a9da](https://github.com/home-operations/pangolin-operator/commit/270a9dae25847fed392ec2837f8101113913b5a7))
+* add kubeVersion constraint to chart ([4f12aaa](https://github.com/home-operations/pangolin-operator/commit/4f12aaa880b97346f4e87bd204fff6c65a04e7bd))
+* adjust default resource requests and limits ([77c2763](https://github.com/home-operations/pangolin-operator/commit/77c276305f9656af8e6a6b321b89140f34956a4a))
+* cleanup duplicate ([69ae200](https://github.com/home-operations/pangolin-operator/commit/69ae200bfbb0152c6b1b1605becd8e098ff26ee9))
+* enable gosec linter and fix findings ([4c13a7a](https://github.com/home-operations/pangolin-operator/commit/4c13a7aaefde4259beac9e12def318f06101327f))
+* make priorityClassName configurable in values ([83779c5](https://github.com/home-operations/pangolin-operator/commit/83779c592eb09a542fe24777bd7a711bc4faa5c7))
+* pin distroless base image by digest ([0cd693f](https://github.com/home-operations/pangolin-operator/commit/0cd693f8c6f088e7ed4d59911e9543c8ec631731))
+* release 0.0.3 ([95ff137](https://github.com/home-operations/pangolin-operator/commit/95ff137a61513aaff44d02bc4acb75e0fa920970))
+* remove unused DeleteOwnedPublicResources ([3c3f400](https://github.com/home-operations/pangolin-operator/commit/3c3f4001dbaf39e428538089dff2617afeb9c10e))
+
+
+### Code Refactoring
+
+* align privateresource setCondition signature with other controllers ([d744348](https://github.com/home-operations/pangolin-operator/commit/d744348fb66dbaef2a1889c156b4864239ee8533))
+* consolidate test helpers into internal/testutil ([43ef320](https://github.com/home-operations/pangolin-operator/commit/43ef3206804b765efe25e1fcbe8374ca23dd1b7c))
+* extract MTU default into constant ([b2f9c8a](https://github.com/home-operations/pangolin-operator/commit/b2f9c8a0e18b92bb0ea4f206cd88dd32518a179e))
+
+
+### Continuous Integration
+
+* **github-action:** Update action actions/create-github-app-token (v2.2.2 → v3.0.0) ([#6](https://github.com/home-operations/pangolin-operator/issues/6)) ([530d30e](https://github.com/home-operations/pangolin-operator/commit/530d30e78bb917e901a7d8bb7e81a97fa9ec9e4b))
+* **github-action:** Update action azure/setup-helm (v4.3.1 → v5.0.0) ([#7](https://github.com/home-operations/pangolin-operator/issues/7)) ([5648ac3](https://github.com/home-operations/pangolin-operator/commit/5648ac3501f7c6db8fc9ae79e04bea03d5b23a25))
+
 ## [0.0.2](https://github.com/home-operations/pangolin-operator/compare/0.0.1...0.0.2) (2026-03-30)
 
 
