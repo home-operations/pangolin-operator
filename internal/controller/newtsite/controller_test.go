@@ -300,7 +300,7 @@ func TestReconcile_DriftDetection_ResetsSiteIDOn404(t *testing.T) {
 			Finalizers: []string{NewtSiteFinalizer},
 		},
 		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
-		Status: pangolinv1alpha1.NewtSiteStatus{
+		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1, // generation matches — steady state
 			NewtSecretName:     "my-site-newt-credentials",
@@ -321,8 +321,8 @@ func TestReconcile_DriftDetection_ResetsSiteIDOn404(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !result.Requeue {
-		t.Error("expected Requeue=true after drift detection")
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter to be set after drift detection")
 	}
 
 	var updated pangolinv1alpha1.NewtSite
@@ -353,7 +353,7 @@ func TestReconcile_UpdateSite_Handles404(t *testing.T) {
 			Finalizers: []string{NewtSiteFinalizer},
 		},
 		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "new-name"},
-		Status: pangolinv1alpha1.NewtSiteStatus{
+		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1, // generation mismatch triggers update path
 			NewtSecretName:     "my-site-newt-credentials",
@@ -374,8 +374,8 @@ func TestReconcile_UpdateSite_Handles404(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !result.Requeue {
-		t.Error("expected Requeue=true after 404 on update")
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter to be set after 404 on update")
 	}
 
 	var updated pangolinv1alpha1.NewtSite
@@ -408,7 +408,7 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 			Finalizers: []string{NewtSiteFinalizer},
 		},
 		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
-		Status: pangolinv1alpha1.NewtSiteStatus{
+		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1,
 			NewtSecretName:     "my-site-newt-credentials",

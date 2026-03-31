@@ -106,7 +106,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 				}); patchErr != nil {
 					return ctrl.Result{}, patchErr
 				}
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
@@ -124,7 +124,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 				}); patchErr != nil {
 					return ctrl.Result{}, patchErr
 				}
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("drift check GetSiteResource: %w", err)
 		}
