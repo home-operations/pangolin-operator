@@ -337,7 +337,8 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 
 	// Always re-apply all settings on update — spec is the source of truth.
 	updateReq := pangolin.UpdateResourceRequest{
-		Name: res.Spec.Name,
+		Name:    res.Spec.Name,
+		Enabled: &res.Spec.Enabled,
 	}
 	if res.Spec.Protocol == protocolHTTP {
 		httpReq := buildHTTPUpdateRequest(res.Spec)
