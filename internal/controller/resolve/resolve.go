@@ -1,5 +1,5 @@
 // Package resolve provides helpers for looking up NewtSite objects by name
-// across all namespaces using a field index registered at manager startup.
+// using a field index registered at manager startup.
 package resolve
 
 import (
@@ -14,10 +14,7 @@ import (
 
 const IndexField = "metadata.name"
 
-var (
-	ErrNotFound  = errors.New("NewtSite not found")
-	ErrAmbiguous = errors.New("NewtSite name is ambiguous: found in multiple namespaces")
-)
+var ErrNotFound = errors.New("NewtSite not found")
 
 func Site(ctx context.Context, c client.Client, name string) (*pangolinv1alpha1.NewtSite, error) {
 	var list pangolinv1alpha1.NewtSiteList
@@ -25,16 +22,8 @@ func Site(ctx context.Context, c client.Client, name string) (*pangolinv1alpha1.
 		return nil, fmt.Errorf("list NewtSites by name %q: %w", name, err)
 	}
 
-	switch len(list.Items) {
-	case 0:
+	if len(list.Items) == 0 {
 		return nil, fmt.Errorf("%w: %q", ErrNotFound, name)
-	case 1:
-		return &list.Items[0], nil
-	default:
-		namespaces := make([]string, len(list.Items))
-		for i, s := range list.Items {
-			namespaces[i] = s.Namespace
-		}
-		return nil, fmt.Errorf("%w: %q exists in namespaces %v", ErrAmbiguous, name, namespaces)
 	}
+	return &list.Items[0], nil
 }

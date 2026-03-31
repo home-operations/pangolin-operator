@@ -71,7 +71,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			setCondition(s, metav1.ConditionFalse, reasonPending, err.Error(), res.Generation)
 		})
-		if errors.Is(err, ctrlresolve.ErrNotFound) || errors.Is(err, ctrlresolve.ErrAmbiguous) {
+		if errors.Is(err, ctrlresolve.ErrNotFound) {
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 		return ctrl.Result{}, err

@@ -709,7 +709,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
-		Owns(&pangolinv1alpha1.PublicResource{}).
 		Complete(r); err != nil {
 		return err
 	}
