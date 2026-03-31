@@ -150,6 +150,9 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	logger := log.FromContext(ctx)
+	logger.Info("DEBUG Pangolin API call", "method", method, "url", url, "httpStatus", resp.StatusCode)
+
 	// Check for 404 before attempting to decode — the server may return an HTML page
 	// for missing resources rather than a JSON envelope.
 	if resp.StatusCode == http.StatusNotFound {
@@ -188,8 +191,6 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 		return fmt.Errorf("pangolin API error (HTTP %d, status %d): %s",
 			resp.StatusCode, envelope.Status, envelope.Message)
 	}
-	logger := log.FromContext(ctx)
-	logger.V(1).Info("Pangolin API response", "method", method, "url", url, "status", resp.StatusCode, "data", string(envelope.Data))
 	if out != nil && len(envelope.Data) > 0 {
 		if err := json.Unmarshal(envelope.Data, out); err != nil {
 			return fmt.Errorf("decode response data: %w", err)
