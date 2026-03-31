@@ -28,10 +28,13 @@ jobs:
         with:
           version: v2.9.0
 
+      - name: Setup Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+
       - name: Helm lint
         run: helm lint charts/pangolin-operator
 
       - name: Helm unittest
         run: |-
-          helm plugin install https://github.com/helm-unittest/helm-unittest.git --verify=false
+          helm plugin install https://github.com/helm-unittest/helm-unittest.git
           helm unittest charts/pangolin-operator
