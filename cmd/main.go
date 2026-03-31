@@ -35,7 +35,9 @@ import (
 	"github.com/home-operations/pangolin-operator/internal/controller/privateresource"
 	"github.com/home-operations/pangolin-operator/internal/controller/publicresource"
 	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
+	operatormetrics "github.com/home-operations/pangolin-operator/internal/metrics"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -178,6 +180,8 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	ctrlmetrics.Registry.MustRegister(operatormetrics.NewResourceCollector(mgr.GetClient()))
 
 	setupLog.Info("Setting up controllers")
 

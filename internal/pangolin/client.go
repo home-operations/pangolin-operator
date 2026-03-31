@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/home-operations/pangolin-operator/internal/metrics"
 )
 
 // Credentials holds the connection details parsed from a Kubernetes Secret
@@ -115,6 +117,14 @@ func (c *Client) apiBase() string {
 // do executes an HTTP request. body is JSON-encoded when non-nil.
 // On success the "data" field of the response envelope is decoded into out.
 func (c *Client) do(ctx context.Context, method, url string, body, out any) error {
+	start := time.Now()
+	endpoint := metrics.ClassifyEndpoint(url)
+	status := "error"
+	defer func() {
+		metrics.APIRequestDuration.WithLabelValues(method, endpoint).Observe(time.Since(start).Seconds())
+		metrics.APIRequestsTotal.WithLabelValues(method, endpoint, status).Inc()
+	}()
+
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -142,10 +152,12 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 	// Check for 404 before attempting to decode — the server may return an HTML page
 	// for missing resources rather than a JSON envelope.
 	if resp.StatusCode == http.StatusNotFound {
+		status = "not_found"
 		return &ErrNotFound{Message: "not found (HTTP 404)"}
 	}
 
 	if resp.StatusCode == http.StatusBadRequest {
+		status = "bad_request"
 		var body struct {
 			Message string `json:"message"`
 		}
@@ -156,6 +168,7 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 	}
 
 	if resp.StatusCode == http.StatusConflict {
+		status = "conflict"
 		return &ErrConflict{Message: "conflict (HTTP 409)"}
 	}
 
@@ -179,6 +192,7 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 			return fmt.Errorf("decode response data: %w", err)
 		}
 	}
+	status = "success"
 	return nil
 }
 
