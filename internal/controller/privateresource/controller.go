@@ -121,6 +121,14 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	return ctrl.Result{}, nil
 }
 
+// orEmpty returns s if non-nil, otherwise an empty slice of the same type.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
 	logger := log.FromContext(ctx)
 
@@ -128,19 +136,6 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 		s.Phase = pangolinv1alpha1.PrivateResourcePhaseCreating
 	}); err != nil {
 		return err
-	}
-
-	roleIds := res.Spec.RoleIds
-	if roleIds == nil {
-		roleIds = []int{}
-	}
-	userIds := res.Spec.UserIds
-	if userIds == nil {
-		userIds = []string{}
-	}
-	clientIds := res.Spec.ClientIds
-	if clientIds == nil {
-		clientIds = []int{}
 	}
 
 	created, err := r.PangolinClient.CreateSiteResource(ctx, pangolin.CreateSiteResourceRequest{
@@ -152,9 +147,9 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 		UdpPortRangeString: res.Spec.UdpPorts,
 		DisableIcmp:        res.Spec.DisableIcmp,
 		Alias:              res.Spec.Alias,
-		RoleIds:            roleIds,
-		UserIds:            userIds,
-		ClientIds:          clientIds,
+		RoleIds:            orEmpty(res.Spec.RoleIds),
+		UserIds:            orEmpty(res.Spec.UserIds),
+		ClientIds:          orEmpty(res.Spec.ClientIds),
 	})
 	if err != nil {
 		return fmt.Errorf("CreateSiteResource: %w", err)
@@ -169,18 +164,6 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 }
 
 func (r *Reconciler) updateSiteResource(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
-	roleIds := res.Spec.RoleIds
-	if roleIds == nil {
-		roleIds = []int{}
-	}
-	userIds := res.Spec.UserIds
-	if userIds == nil {
-		userIds = []string{}
-	}
-	clientIds := res.Spec.ClientIds
-	if clientIds == nil {
-		clientIds = []int{}
-	}
 	if err := r.PangolinClient.UpdateSiteResource(ctx, res.Status.SiteResourceID, pangolin.UpdateSiteResourceRequest{
 		SiteID:             siteID,
 		Name:               res.Spec.Name,
@@ -190,9 +173,9 @@ func (r *Reconciler) updateSiteResource(ctx context.Context, res *pangolinv1alph
 		UdpPortRangeString: res.Spec.UdpPorts,
 		DisableIcmp:        res.Spec.DisableIcmp,
 		Alias:              res.Spec.Alias,
-		RoleIds:            roleIds,
-		UserIds:            userIds,
-		ClientIds:          clientIds,
+		RoleIds:            orEmpty(res.Spec.RoleIds),
+		UserIds:            orEmpty(res.Spec.UserIds),
+		ClientIds:          orEmpty(res.Spec.ClientIds),
 	}); err != nil {
 		return fmt.Errorf("UpdateSiteResource: %w", err)
 	}

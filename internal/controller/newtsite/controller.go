@@ -317,7 +317,7 @@ func (r *Reconciler) ReconcileHTTPRoute(ctx context.Context, req ctrl.Request) (
 	var route gatewayv1.HTTPRoute
 	if err := r.Get(ctx, req.NamespacedName, &route); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			return r.deleteAllHTTPRouteResources(ctx, req.Name)
+			return r.deleteOwnedResources(ctx, "httproute", req.Name)
 		}
 		return ctrl.Result{}, err
 	}
@@ -336,7 +336,7 @@ func (r *Reconciler) ReconcileHTTPRoute(ctx context.Context, req ctrl.Request) (
 	}
 
 	if autodiscover.IsOptOut(annotations, prefix) {
-		return r.deleteAllHTTPRouteResources(ctx, route.Name)
+		return r.deleteOwnedResources(ctx, "httproute", route.Name)
 	}
 
 	r.processHTTPRoute(ctx, site, cfg, &route)
@@ -363,7 +363,7 @@ func (r *Reconciler) ReconcileService(ctx context.Context, req ctrl.Request) (ct
 	var svc corev1.Service
 	if err := r.Get(ctx, req.NamespacedName, &svc); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			return r.deleteAllServiceResources(ctx, req.Name)
+			return r.deleteOwnedResources(ctx, "service", req.Name)
 		}
 		return ctrl.Result{}, err
 	}
@@ -382,7 +382,7 @@ func (r *Reconciler) ReconcileService(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if autodiscover.IsOptOut(annotations, prefix) {
-		return r.deleteAllServiceResources(ctx, svc.Name)
+		return r.deleteOwnedResources(ctx, "service", svc.Name)
 	}
 
 	r.processService(ctx, site, cfg, prefix, &svc)
@@ -430,7 +430,7 @@ func (r *Reconciler) ReconcileTCPRoute(ctx context.Context, req ctrl.Request) (c
 	var route gatewayv1alpha2.TCPRoute
 	if err := r.Get(ctx, req.NamespacedName, &route); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			return r.deleteAllTCPRouteResources(ctx, req.Name)
+			return r.deleteOwnedResources(ctx, "tcproute", req.Name)
 		}
 		return ctrl.Result{}, err
 	}
@@ -449,7 +449,7 @@ func (r *Reconciler) ReconcileTCPRoute(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if autodiscover.IsOptOut(annotations, prefix) {
-		return r.deleteAllTCPRouteResources(ctx, route.Name)
+		return r.deleteOwnedResources(ctx, "tcproute", route.Name)
 	}
 
 	r.processTCPRoute(ctx, site, cfg, &route)
@@ -470,53 +470,12 @@ func (r *Reconciler) processTCPRoute(ctx context.Context, site *pangolinv1alpha1
 }
 
 func (r *Reconciler) resolveSiteForTCPRoute(ctx context.Context, annotations map[string]string, route *gatewayv1alpha2.TCPRoute) (*pangolinv1alpha1.NewtSite, *pangolinv1alpha1.AutoDiscoverSpec, string, bool, error) {
-	var siteList pangolinv1alpha1.NewtSiteList
-	if err := r.List(ctx, &siteList); err != nil {
-		return nil, nil, "", false, err
-	}
-
-	for i := range siteList.Items {
-		site := &siteList.Items[i]
-		if site.Spec.AutoDiscover == nil {
-			continue
-		}
-		cfg := site.Spec.AutoDiscover
-		if !cfg.EnableTCPRouteDiscovery {
-			continue
-		}
-		p := cfg.AnnotationPrefix
-		if p == "" {
-			p = autodiscover.DefaultAnnotationPrefix
-		}
-
-		if siteRef := annotations[p+"/site-ref"]; siteRef == site.Name {
-			if ns := annotations[p+"/site-namespace"]; ns == "" || ns == site.Namespace {
-				return site, cfg, p, true, nil
-			}
-		}
-
-		if cfg.GatewayName != "" && route != nil && autodiscover.TCPRouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace) {
-			return site, cfg, p, true, nil
-		}
-	}
-
-	return nil, nil, "", false, nil
-}
-
-func (r *Reconciler) deleteAllTCPRouteResources(ctx context.Context, routeName string) (ctrl.Result, error) {
-	var list pangolinv1alpha1.PublicResourceList
-	if err := r.List(ctx, &list, client.MatchingLabels{
-		"pangolin.home-operations.com/owner-kind": "tcproute",
-		"pangolin.home-operations.com/owner-name": routeName,
-	}); err != nil {
-		return ctrl.Result{}, err
-	}
-	for i := range list.Items {
-		if err := r.Delete(ctx, &list.Items[i]); err != nil && client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, err
-		}
-	}
-	return ctrl.Result{}, nil
+	return r.resolveSite(ctx, annotations,
+		func(cfg *pangolinv1alpha1.AutoDiscoverSpec) bool { return cfg.EnableTCPRouteDiscovery },
+		func(cfg *pangolinv1alpha1.AutoDiscoverSpec) bool {
+			return route != nil && cfg.GatewayName != "" && autodiscover.TCPRouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace)
+		},
+	)
 }
 
 func (r *Reconciler) reconcileAutodiscover(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {
@@ -635,6 +594,29 @@ func (r *Reconciler) scanServices(ctx context.Context, site *pangolinv1alpha1.Ne
 }
 
 func (r *Reconciler) resolveSiteForHTTPRoute(ctx context.Context, annotations map[string]string, route *gatewayv1.HTTPRoute) (*pangolinv1alpha1.NewtSite, *pangolinv1alpha1.AutoDiscoverSpec, string, bool, error) {
+	return r.resolveSite(ctx, annotations,
+		func(cfg *pangolinv1alpha1.AutoDiscoverSpec) bool { return cfg.EnableRouteDiscovery },
+		func(cfg *pangolinv1alpha1.AutoDiscoverSpec) bool {
+			return route != nil && cfg.GatewayName != "" && autodiscover.RouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace)
+		},
+	)
+}
+
+func (r *Reconciler) resolveSiteForService(ctx context.Context, annotations map[string]string) (*pangolinv1alpha1.NewtSite, *pangolinv1alpha1.AutoDiscoverSpec, string, bool, error) {
+	return r.resolveSite(ctx, annotations,
+		func(cfg *pangolinv1alpha1.AutoDiscoverSpec) bool { return cfg.EnableServiceDiscovery },
+		nil,
+	)
+}
+
+// resolveSite finds the first NewtSite whose AutoDiscover config matches the given annotations.
+// enabled filters sites by discovery type; gatewayMatch optionally checks gateway parentRef matching.
+func (r *Reconciler) resolveSite(
+	ctx context.Context,
+	annotations map[string]string,
+	enabled func(*pangolinv1alpha1.AutoDiscoverSpec) bool,
+	gatewayMatch func(*pangolinv1alpha1.AutoDiscoverSpec) bool,
+) (*pangolinv1alpha1.NewtSite, *pangolinv1alpha1.AutoDiscoverSpec, string, bool, error) {
 	var siteList pangolinv1alpha1.NewtSiteList
 	if err := r.List(ctx, &siteList); err != nil {
 		return nil, nil, "", false, err
@@ -646,7 +628,7 @@ func (r *Reconciler) resolveSiteForHTTPRoute(ctx context.Context, annotations ma
 			continue
 		}
 		cfg := site.Spec.AutoDiscover
-		if !cfg.EnableRouteDiscovery {
+		if !enabled(cfg) {
 			continue
 		}
 		p := cfg.AnnotationPrefix
@@ -660,7 +642,7 @@ func (r *Reconciler) resolveSiteForHTTPRoute(ctx context.Context, annotations ma
 			}
 		}
 
-		if cfg.GatewayName != "" && route != nil && autodiscover.RouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace) {
+		if gatewayMatch != nil && gatewayMatch(cfg) {
 			return site, cfg, p, true, nil
 		}
 	}
@@ -668,58 +650,12 @@ func (r *Reconciler) resolveSiteForHTTPRoute(ctx context.Context, annotations ma
 	return nil, nil, "", false, nil
 }
 
-func (r *Reconciler) resolveSiteForService(ctx context.Context, annotations map[string]string) (*pangolinv1alpha1.NewtSite, *pangolinv1alpha1.AutoDiscoverSpec, string, bool, error) {
-	var siteList pangolinv1alpha1.NewtSiteList
-	if err := r.List(ctx, &siteList); err != nil {
-		return nil, nil, "", false, err
-	}
-
-	for i := range siteList.Items {
-		site := &siteList.Items[i]
-		if site.Spec.AutoDiscover == nil {
-			continue
-		}
-		cfg := site.Spec.AutoDiscover
-		if !cfg.EnableServiceDiscovery {
-			continue
-		}
-		p := cfg.AnnotationPrefix
-		if p == "" {
-			p = autodiscover.DefaultAnnotationPrefix
-		}
-		if siteRef := annotations[p+"/site-ref"]; siteRef == site.Name {
-			if ns := annotations[p+"/site-namespace"]; ns == "" || ns == site.Namespace {
-				return site, cfg, p, true, nil
-			}
-		}
-	}
-
-	return nil, nil, "", false, nil
-}
-
-func (r *Reconciler) deleteAllHTTPRouteResources(ctx context.Context, routeName string) (ctrl.Result, error) {
-	// PublicResources are created in site.Namespace, not the HTTPRoute namespace, so list cluster-wide.
+// deleteOwnedResources deletes all PublicResources with the given owner-kind and owner-name labels.
+func (r *Reconciler) deleteOwnedResources(ctx context.Context, ownerKind, ownerName string) (ctrl.Result, error) {
 	var list pangolinv1alpha1.PublicResourceList
 	if err := r.List(ctx, &list, client.MatchingLabels{
-		"pangolin.home-operations.com/owner-kind": "httproute",
-		"pangolin.home-operations.com/owner-name": routeName,
-	}); err != nil {
-		return ctrl.Result{}, err
-	}
-	for i := range list.Items {
-		if err := r.Delete(ctx, &list.Items[i]); err != nil && client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, err
-		}
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *Reconciler) deleteAllServiceResources(ctx context.Context, svcName string) (ctrl.Result, error) {
-	// PublicResources are created in site.Namespace, not the Service namespace, so list cluster-wide.
-	var list pangolinv1alpha1.PublicResourceList
-	if err := r.List(ctx, &list, client.MatchingLabels{
-		"pangolin.home-operations.com/owner-kind": "service",
-		"pangolin.home-operations.com/owner-name": svcName,
+		"pangolin.home-operations.com/owner-kind": ownerKind,
+		"pangolin.home-operations.com/owner-name": ownerName,
 	}); err != nil {
 		return ctrl.Result{}, err
 	}

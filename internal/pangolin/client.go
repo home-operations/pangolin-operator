@@ -150,9 +150,6 @@ func (c *Client) do(ctx context.Context, method, url string, body, out any) erro
 			method, url, resp.StatusCode, err)
 	}
 	if !envelope.Success {
-		if resp.StatusCode == http.StatusNotFound {
-			return &ErrNotFound{Message: fmt.Sprintf("pangolin API error (HTTP 404): %s", envelope.Message)}
-		}
 		return fmt.Errorf("pangolin API error (HTTP %d, status %d): %s",
 			resp.StatusCode, envelope.Status, envelope.Message)
 	}

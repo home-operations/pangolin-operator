@@ -193,8 +193,8 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 	}
 
 	if isHTTP {
-		if err := r.applyHTTPSettings(ctx, created.ResourceID, res); err != nil {
-			return err
+		if err := r.PangolinClient.UpdateResource(ctx, created.ResourceID, buildHTTPUpdateRequest(res.Spec)); err != nil {
+			return fmt.Errorf("UpdateResource (HTTP settings): %w", err)
 		}
 	}
 
@@ -225,36 +225,32 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 	})
 }
 
-func (r *Reconciler) applyHTTPSettings(ctx context.Context, resourceID int, res *pangolinv1alpha1.PublicResource) error {
+// buildHTTPUpdateRequest builds the UpdateResourceRequest for HTTP-protocol resources.
+func buildHTTPUpdateRequest(spec pangolinv1alpha1.PublicResourceSpec) pangolin.UpdateResourceRequest {
 	f := new(false)
-	updateReq := pangolin.UpdateResourceRequest{
-		Ssl:         new(res.Spec.Ssl),
+	req := pangolin.UpdateResourceRequest{
+		Ssl:         new(spec.Ssl),
 		Sso:         f,
 		BlockAccess: f,
+		Enabled:     spec.Enabled,
+		ApplyRules:  new(len(spec.Rules) > 0),
 	}
-	updateReq.Enabled = res.Spec.Enabled
-	if res.Spec.TlsServerName != "" {
-		updateReq.TlsServerName = &res.Spec.TlsServerName
+	if spec.TlsServerName != "" {
+		req.TlsServerName = &spec.TlsServerName
 	}
-	if res.Spec.HostHeader != "" {
-		updateReq.SetHostHeader = &res.Spec.HostHeader
+	if spec.HostHeader != "" {
+		req.SetHostHeader = &spec.HostHeader
 	}
-	if res.Spec.Auth != nil && res.Spec.Auth.SsoEnabled {
-		updateReq.Sso = new(true)
-		if res.Spec.Auth.AutoLoginIdp > 0 {
-			updateReq.SkipToIdpId = &res.Spec.Auth.AutoLoginIdp
+	if spec.Auth != nil && spec.Auth.SsoEnabled {
+		req.Sso = new(true)
+		if spec.Auth.AutoLoginIdp > 0 {
+			req.SkipToIdpId = &spec.Auth.AutoLoginIdp
 		}
 	}
-	if res.Spec.Auth != nil && len(res.Spec.Auth.WhitelistUsers) > 0 {
-		updateReq.EmailWhitelistEnabled = new(true)
+	if spec.Auth != nil && len(spec.Auth.WhitelistUsers) > 0 {
+		req.EmailWhitelistEnabled = new(true)
 	}
-	if len(res.Spec.Rules) > 0 {
-		updateReq.ApplyRules = new(true)
-	}
-	if err := r.PangolinClient.UpdateResource(ctx, resourceID, updateReq); err != nil {
-		return fmt.Errorf("UpdateResource (HTTP settings): %w", err)
-	}
-	return nil
+	return req
 }
 
 func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.PublicResource, siteID int) error {
@@ -269,27 +265,9 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 		updateReq.Name = res.Spec.Name
 	}
 	if res.Spec.Protocol == "http" {
-		f := new(false)
-		updateReq.Ssl = new(res.Spec.Ssl)
-		updateReq.Sso = f
-		updateReq.BlockAccess = f
-		updateReq.Enabled = res.Spec.Enabled
-		if res.Spec.TlsServerName != "" {
-			updateReq.TlsServerName = &res.Spec.TlsServerName
-		}
-		if res.Spec.HostHeader != "" {
-			updateReq.SetHostHeader = &res.Spec.HostHeader
-		}
-		if res.Spec.Auth != nil && res.Spec.Auth.SsoEnabled {
-			updateReq.Sso = new(true)
-			if res.Spec.Auth.AutoLoginIdp > 0 {
-				updateReq.SkipToIdpId = &res.Spec.Auth.AutoLoginIdp
-			}
-		}
-		if res.Spec.Auth != nil && len(res.Spec.Auth.WhitelistUsers) > 0 {
-			updateReq.EmailWhitelistEnabled = new(true)
-		}
-		updateReq.ApplyRules = new(len(res.Spec.Rules) > 0)
+		httpReq := buildHTTPUpdateRequest(res.Spec)
+		httpReq.Name = updateReq.Name
+		updateReq = httpReq
 	}
 	if err := r.PangolinClient.UpdateResource(ctx, res.Status.ResourceID, updateReq); err != nil {
 		return fmt.Errorf("UpdateResource: %w", err)
