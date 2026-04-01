@@ -3,13 +3,14 @@ package publicresource
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -21,13 +22,14 @@ import (
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
+	"github.com/home-operations/pangolin-operator/internal/controller/shared"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
 )
 
 const (
 	PublicResourceFinalizer = "pangolin.home-operations.com/publicresource-finalizer"
-	resyncInterval          = 10 * time.Minute
-	reconcileTimeout        = 2 * time.Minute
+	resyncInterval          = shared.ResyncInterval
+	reconcileTimeout        = shared.ReconcileTimeout
 	protocolHTTP            = "http"
 )
 
@@ -71,9 +73,11 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 
 	site, err := ctrlresolve.Site(ctx, r.Client, res.Spec.SiteRef)
 	if err != nil {
-		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			setCondition(s, metav1.ConditionFalse, reasonPending, err.Error(), res.Generation)
-		})
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status")
+		}
 		if errors.Is(err, ctrlresolve.ErrNotFound) {
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
@@ -82,9 +86,11 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 
 	if site.Status.Phase != pangolinv1alpha1.NewtSitePhaseReady || site.Status.SiteID == 0 {
 		logger.Info("NewtSite not yet ready, requeueing", "site", res.Spec.SiteRef)
-		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			setCondition(s, metav1.ConditionFalse, reasonPending, "waiting for NewtSite to become ready", res.Generation)
-		})
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status")
+		}
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -93,23 +99,29 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 	if err != nil {
 		if pangolin.IsConflict(err) {
 			logger.Info("Pangolin resource already exists with that domain; manual intervention required", "error", err)
-			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonPending,
 					"a resource with that domain already exists in Pangolin; delete it from Pangolin or change spec.fullDomain to resolve",
 					res.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
 		if pangolin.IsBadRequest(err) {
-			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 				s.Phase = pangolinv1alpha1.PublicResourcePhaseError
 				setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
-		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
-		})
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status")
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -127,18 +139,22 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 		if err := r.updateResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
 				logger.Info("Pangolin resource no longer exists during update, will retry", "resourceID", res.Status.ResourceID)
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 					s.ResourceID = 0
 					s.NiceID = ""
 					s.FullDomain = ""
 					s.TargetIDs = []int{}
 					s.RuleIDs = []int{}
-				})
+				}); patchErr != nil {
+					logger.Error(patchErr, "failed to patch status")
+				}
 				return ctrl.Result{Requeue: true}, nil
 			}
-			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{}, err
 		}
 	}
@@ -321,27 +337,31 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 	targetIDs, err := r.createTargets(ctx, created.ResourceID, siteID, res.Spec.Targets)
 	if err != nil {
 		if len(targetIDs) > 0 {
-			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 				s.TargetIDs = targetIDs
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 		}
 		return err
 	}
 
 	ruleIDs, err := r.createRules(ctx, created.ResourceID, res.Spec.Rules)
 	if err != nil {
-		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			s.TargetIDs = targetIDs
 			s.RuleIDs = ruleIDs
-		})
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status")
+		}
 		return err
 	}
 
 	return r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 		s.TargetIDs = targetIDs
-		s.TargetsHash = hashTargets(res.Spec.Targets)
+		s.TargetsHash = hashJSON(res.Spec.Targets)
 		s.RuleIDs = ruleIDs
-		s.RulesHash = hashRules(res.Spec.Rules)
+		s.RulesHash = hashJSON(res.Spec.Rules)
 	})
 }
 
@@ -364,22 +384,25 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 
 	// Create new before deleting old to avoid dropping traffic.
 	// Persist new IDs+hash before cleanup so a crash won't cause duplicates.
-	if hashTargets(res.Spec.Targets) != res.Status.TargetsHash {
+	targetsHash := hashJSON(res.Spec.Targets)
+	if targetsHash != res.Status.TargetsHash {
 		oldTargetIDs := res.Status.TargetIDs
 
 		targetIDs, err := r.createTargets(ctx, res.Status.ResourceID, siteID, res.Spec.Targets)
 		if err != nil {
 			if len(targetIDs) > 0 {
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 					s.TargetIDs = append(res.Status.TargetIDs, targetIDs...)
-				})
+				}); patchErr != nil {
+					logger.Error(patchErr, "failed to patch status")
+				}
 			}
 			return err
 		}
 
 		if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			s.TargetIDs = targetIDs
-			s.TargetsHash = hashTargets(res.Spec.Targets)
+			s.TargetsHash = targetsHash
 		}); err != nil {
 			return err
 		}
@@ -391,22 +414,25 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 		}
 	}
 
-	if hashRules(res.Spec.Rules) != res.Status.RulesHash {
+	rulesHash := hashJSON(res.Spec.Rules)
+	if rulesHash != res.Status.RulesHash {
 		oldRuleIDs := res.Status.RuleIDs
 
 		ruleIDs, err := r.createRules(ctx, res.Status.ResourceID, res.Spec.Rules)
 		if err != nil {
 			if len(ruleIDs) > 0 {
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
+				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 					s.RuleIDs = append(res.Status.RuleIDs, ruleIDs...)
-				})
+				}); patchErr != nil {
+					logger.Error(patchErr, "failed to patch status")
+				}
 			}
 			return err
 		}
 
 		if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 			s.RuleIDs = ruleIDs
-			s.RulesHash = hashRules(res.Spec.Rules)
+			s.RulesHash = rulesHash
 		}); err != nil {
 			return err
 		}
@@ -422,57 +448,91 @@ func (r *Reconciler) updateResource(ctx context.Context, res *pangolinv1alpha1.P
 }
 
 func (r *Reconciler) createTargets(ctx context.Context, resourceID, siteID int, targets []pangolinv1alpha1.PublicTargetSpec) ([]int, error) {
-	ids := make([]int, 0, len(targets))
-	for _, t := range targets {
-		target, err := r.PangolinClient.CreateTarget(ctx, resourceID, pangolin.CreateTargetRequest{
-			SiteID:          siteID,
-			Ip:              t.Hostname,
-			Port:            t.Port,
-			Method:          t.Method,
-			Enabled:         t.Enabled,
-			Path:            t.Path,
-			PathMatchType:   t.PathMatchType,
-			RewritePath:     t.RewritePath,
-			RewritePathType: t.RewritePathType,
-			Priority:        t.Priority,
+	ids := make([]int, len(targets))
+	var mu sync.Mutex
+	var errs []error
+
+	var wg sync.WaitGroup
+	for i, t := range targets {
+		wg.Go(func() {
+			target, err := r.PangolinClient.CreateTarget(ctx, resourceID, pangolin.CreateTargetRequest{
+				SiteID:          siteID,
+				IP:              t.Hostname,
+				Port:            t.Port,
+				Method:          t.Method,
+				Enabled:         t.Enabled,
+				Path:            t.Path,
+				PathMatchType:   t.PathMatchType,
+				RewritePath:     t.RewritePath,
+				RewritePathType: t.RewritePathType,
+				Priority:        t.Priority,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("CreateTarget: %w", err))
+			} else {
+				ids[i] = target.TargetID
+			}
 		})
-		if err != nil {
-			return ids, fmt.Errorf("CreateTarget: %w", err)
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		var created []int
+		for _, id := range ids {
+			if id != 0 {
+				created = append(created, id)
+			}
 		}
-		ids = append(ids, target.TargetID)
+		return created, err
 	}
 	return ids, nil
 }
 
 func (r *Reconciler) createRules(ctx context.Context, resourceID int, rules []pangolinv1alpha1.PublicRuleSpec) ([]int, error) {
-	ids := make([]int, 0, len(rules))
+	ids := make([]int, len(rules))
+	var mu sync.Mutex
+	var errs []error
+
+	var wg sync.WaitGroup
 	for i, rule := range rules {
 		priority := rule.Priority
 		if priority == 0 {
 			priority = (i + 1) * 10
 		}
-		created, err := r.PangolinClient.CreateRule(ctx, resourceID, pangolin.CreateRuleRequest{
-			Action:   strings.ToUpper(rule.Action),
-			Match:    strings.ToUpper(rule.Match),
-			Value:    rule.Value,
-			Priority: priority,
+		wg.Go(func() {
+			created, err := r.PangolinClient.CreateRule(ctx, resourceID, pangolin.CreateRuleRequest{
+				Action:   strings.ToUpper(rule.Action),
+				Match:    strings.ToUpper(rule.Match),
+				Value:    rule.Value,
+				Priority: priority,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("CreateRule: %w", err))
+			} else {
+				ids[i] = created.RuleID
+			}
 		})
-		if err != nil {
-			return ids, fmt.Errorf("CreateRule: %w", err)
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		var created []int
+		for _, id := range ids {
+			if id != 0 {
+				created = append(created, id)
+			}
 		}
-		ids = append(ids, created.RuleID)
+		return created, err
 	}
 	return ids, nil
 }
 
-func hashTargets(targets []pangolinv1alpha1.PublicTargetSpec) string {
-	b, _ := json.Marshal(targets)
-	return fmt.Sprintf("%x", sha256.Sum256(b))
-}
-
-func hashRules(rules []pangolinv1alpha1.PublicRuleSpec) string {
-	b, _ := json.Marshal(rules)
-	return fmt.Sprintf("%x", sha256.Sum256(b))
+func hashJSON(v any) string {
+	b, _ := json.Marshal(v)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 func (r *Reconciler) cleanup(ctx context.Context, res *pangolinv1alpha1.PublicResource) error {
@@ -499,15 +559,8 @@ func (r *Reconciler) patchStatus(ctx context.Context, res *pangolinv1alpha1.Publ
 	return r.Status().Patch(ctx, res, patch)
 }
 
-// setCondition sets the Ready condition on the status.
 func setCondition(s *pangolinv1alpha1.PublicResourceStatus, status metav1.ConditionStatus, reason, message string, generation int64) {
-	apimeta.SetStatusCondition(&s.Conditions, metav1.Condition{
-		Type:               conditionReady,
-		Status:             status,
-		ObservedGeneration: generation,
-		Reason:             reason,
-		Message:            message,
-	})
+	shared.SetCondition(&s.Conditions, status, reason, message, generation)
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {

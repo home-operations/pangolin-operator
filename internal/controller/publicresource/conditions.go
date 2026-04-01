@@ -1,9 +1,11 @@
 package publicresource
 
+import "github.com/home-operations/pangolin-operator/internal/controller/shared"
+
 const (
-	conditionReady       = "Ready"
-	reasonReconciled     = "Reconciled"
-	reasonPending        = "Pending"
-	reasonError          = "Error"
-	reasonPermanentError = "PermanentError"
+	conditionReady       = shared.ConditionReady
+	reasonReconciled     = shared.ReasonReconciled
+	reasonPending        = shared.ReasonPending
+	reasonError          = shared.ReasonError
+	reasonPermanentError = shared.ReasonPermanentError
 )

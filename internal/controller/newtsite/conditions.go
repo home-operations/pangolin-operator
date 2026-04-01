@@ -1,8 +1,10 @@
 package newtsite
 
+import "github.com/home-operations/pangolin-operator/internal/controller/shared"
+
 const (
-	conditionReady       = "Ready"
-	reasonReconciled     = "Reconciled"
-	reasonError          = "Error"
-	reasonPermanentError = "PermanentError"
+	conditionReady       = shared.ConditionReady
+	reasonReconciled     = shared.ReasonReconciled
+	reasonError          = shared.ReasonError
+	reasonPermanentError = shared.ReasonPermanentError
 )

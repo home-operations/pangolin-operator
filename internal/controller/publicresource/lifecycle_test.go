@@ -282,7 +282,7 @@ func TestLifecycle_ReAdoptWithStaleHashes(t *testing.T) {
 			ResourceID:  10,
 			NiceID:      "r-10",
 			TargetIDs:   []int{99},
-			TargetsHash: hashTargets(targets),
+			TargetsHash: hashJSON(targets),
 		},
 	}
 
@@ -532,7 +532,7 @@ func TestLifecycle_UpdatePersistsBeforeDelete(t *testing.T) {
 		Status: pangolinv1alpha1.PublicResourceStatus{
 			ResourceID:  7,
 			TargetIDs:   []int{99},
-			TargetsHash: hashTargets(oldTargets),
+			TargetsHash: hashJSON(oldTargets),
 		},
 	}
 	if err := cl.Create(context.Background(), res); err != nil {
@@ -550,7 +550,7 @@ func TestLifecycle_UpdatePersistsBeforeDelete(t *testing.T) {
 	if len(statusAtDeleteTime.TargetIDs) != 1 || statusAtDeleteTime.TargetIDs[0] != 200 {
 		t.Errorf("at delete time: expected TargetIDs=[200], got %v", statusAtDeleteTime.TargetIDs)
 	}
-	if statusAtDeleteTime.TargetsHash != hashTargets(newTargets) {
+	if statusAtDeleteTime.TargetsHash != hashJSON(newTargets) {
 		t.Error("at delete time: expected TargetsHash to match new targets")
 	}
 }
@@ -599,9 +599,9 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 		Status: pangolinv1alpha1.PublicResourceStatus{
 			ResourceID:  7,
 			TargetIDs:   []int{50},
-			TargetsHash: hashTargets(targets),
+			TargetsHash: hashJSON(targets),
 			RuleIDs:     []int{10},
-			RulesHash:   hashRules(oldRules),
+			RulesHash:   hashJSON(oldRules),
 		},
 	}
 
@@ -628,7 +628,7 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-res", Namespace: "default"}, &updated); err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if updated.Status.RulesHash != hashRules(newRules) {
+	if updated.Status.RulesHash != hashJSON(newRules) {
 		t.Error("expected RulesHash to match new rules after update")
 	}
 }

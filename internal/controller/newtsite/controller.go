@@ -2,13 +2,13 @@ package newtsite
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -24,12 +24,13 @@ import (
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 	"github.com/home-operations/pangolin-operator/internal/autodiscover"
+	"github.com/home-operations/pangolin-operator/internal/controller/shared"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
 )
 
 const (
 	NewtSiteFinalizer = "pangolin.home-operations.com/newtsite-finalizer"
-	reconcileTimeout  = 2 * time.Minute
+	reconcileTimeout  = shared.ReconcileTimeout
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=newtsites,verbs=get;list;watch;create;update;patch;delete
@@ -75,7 +76,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return r.reconcile(reconcileCtx, &site)
 }
 
-const resyncInterval = 10 * time.Minute
+const resyncInterval = shared.ResyncInterval
 
 func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtSite) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -83,15 +84,19 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 	if site.Status.SiteID == 0 {
 		if err := r.createSite(ctx, site); err != nil {
 			if pangolin.IsBadRequest(err) {
-				_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+				if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 					s.Phase = pangolinv1alpha1.NewtSitePhaseError
 					setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), site.Generation)
-				})
+				}); patchErr != nil {
+					logger.Error(patchErr, "failed to patch status")
+				}
 				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}
-			_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), site.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{}, err
 		}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(site), site); err != nil {
@@ -110,9 +115,11 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 				}
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
-			_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), site.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{}, err
 		}
 	} else if site.Status.SiteID != 0 {
@@ -134,17 +141,21 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 	}
 
 	online := false
-	if site.Spec.Type != "local" {
+	if site.Spec.Type != shared.SiteTypeLocal {
 		if err := r.ensureServiceAccount(ctx, site); err != nil {
-			_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), site.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{}, err
 		}
 		if err := r.ensureDeployment(ctx, site); err != nil {
-			_ = r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), site.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{}, err
 		}
 		var dep appsv1.Deployment
@@ -186,10 +197,10 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 		return err
 	}
 
-	if site.Spec.Type == "local" {
+	if site.Spec.Type == shared.SiteTypeLocal {
 		created, err := r.PangolinClient.CreateSite(ctx, pangolin.CreateSiteRequest{
 			Name: site.Spec.Name,
-			Type: "local",
+			Type: shared.SiteTypeLocal,
 		})
 		if err != nil {
 			return fmt.Errorf("CreateSite: %w", err)
@@ -217,7 +228,7 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 	created, err := r.PangolinClient.CreateSite(ctx, pangolin.CreateSiteRequest{
 		Name:    site.Spec.Name,
 		Address: defaults.ClientAddress,
-		Type:    "newt",
+		Type:    shared.SiteTypeNewt,
 		NewtID:  defaults.NewtID,
 		Secret:  defaults.NewtSecret,
 	})
@@ -232,7 +243,7 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 			Name:      secretName,
 			Namespace: r.OperatorNamespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "pangolin-operator",
+				shared.LabelManagedBy: "pangolin-operator",
 			},
 		},
 		StringData: map[string]string{
@@ -302,7 +313,10 @@ func (r *Reconciler) ensureServiceAccount(ctx context.Context, site *pangolinv1a
 }
 
 func (r *Reconciler) ensureDeployment(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {
-	secretName := site.Name + "-newt-credentials"
+	secretName := site.Status.NewtSecretName
+	if secretName == "" {
+		secretName = site.Name + "-newt-credentials"
+	}
 	desired := buildDeployment(site, secretName, r.OperatorNamespace)
 	if err := controllerutil.SetControllerReference(site, desired, r.Scheme); err != nil {
 		return fmt.Errorf("set controller reference on deployment: %w", err)
@@ -349,15 +363,8 @@ func (r *Reconciler) patchStatus(ctx context.Context, site *pangolinv1alpha1.New
 	return r.Status().Patch(ctx, site, patch)
 }
 
-// setCondition sets the Ready condition on the status.
 func setCondition(s *pangolinv1alpha1.NewtSiteStatus, status metav1.ConditionStatus, reason, message string, generation int64) {
-	apimeta.SetStatusCondition(&s.Conditions, metav1.Condition{
-		Type:               conditionReady,
-		Status:             status,
-		ObservedGeneration: generation,
-		Reason:             reason,
-		Message:            message,
-	})
+	shared.SetCondition(&s.Conditions, status, reason, message, generation)
 }
 
 func (r *Reconciler) ReconcileHTTPRoute(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -386,12 +393,15 @@ func (r *Reconciler) ReconcileHTTPRoute(ctx context.Context, req ctrl.Request) (
 		return r.deleteOwnedResources(ctx, "httproute", route.Name)
 	}
 
-	r.processHTTPRoute(ctx, site, cfg, &route)
+	if err := r.processHTTPRoute(ctx, site, cfg, &route); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) processHTTPRoute(ctx context.Context, site *pangolinv1alpha1.NewtSite, cfg *pangolinv1alpha1.AutoDiscoverSpec, route *gatewayv1.HTTPRoute) {
+func (r *Reconciler) processHTTPRoute(ctx context.Context, site *pangolinv1alpha1.NewtSite, cfg *pangolinv1alpha1.AutoDiscoverSpec, route *gatewayv1.HTTPRoute) error {
 	logger := log.FromContext(ctx)
+	var errs []error
 	for _, hostname := range route.Spec.Hostnames {
 		host := string(hostname)
 		spec, err := autodiscover.BuildHTTPRouteSpec(route, host, route.GetAnnotations(), cfg, site.Name)
@@ -401,9 +411,10 @@ func (r *Reconciler) processHTTPRoute(ctx context.Context, site *pangolinv1alpha
 		}
 		resName := autodiscover.HostnameToResourceName(route.Name, host)
 		if err := autodiscover.EnsureHTTPRouteResource(ctx, r.Client, site, route.Name, route.Namespace, resName, spec); err != nil {
-			logger.Error(err, "failed to ensure PublicResource for HTTPRoute hostname", "hostname", host)
+			errs = append(errs, fmt.Errorf("ensure PublicResource for HTTPRoute hostname %s: %w", host, err))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 func (r *Reconciler) ReconcileService(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -432,45 +443,48 @@ func (r *Reconciler) ReconcileService(ctx context.Context, req ctrl.Request) (ct
 		return r.deleteOwnedResources(ctx, "service", svc.Name)
 	}
 
-	r.processService(ctx, site, cfg, prefix, &svc)
+	if err := r.processService(ctx, site, cfg, prefix, &svc); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) processService(ctx context.Context, site *pangolinv1alpha1.NewtSite, cfg *pangolinv1alpha1.AutoDiscoverSpec, prefix string, svc *corev1.Service) {
-	logger := log.FromContext(ctx)
+func (r *Reconciler) processService(ctx context.Context, site *pangolinv1alpha1.NewtSite, cfg *pangolinv1alpha1.AutoDiscoverSpec, prefix string, svc *corev1.Service) error {
 	annotations := svc.GetAnnotations()
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
 
 	if !cfg.EnableServiceDiscovery {
-		return
+		return nil
 	}
 
 	siteRef, ok := annotations[prefix+"/site-ref"]
 	if !ok || siteRef == "" {
-		return
+		return nil
 	}
 
 	clusterHostname := fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace)
 	hasFullDomain := len(annotations[prefix+"/full-domain"]) > 0
 
+	var errs []error
 	if !hasFullDomain && autodiscover.ResolveAllPorts(annotations, prefix, cfg) {
 		specs := autodiscover.BuildAllPortSpecs(svc, annotations, cfg, siteRef, clusterHostname)
 		for resName, spec := range specs {
 			if err := autodiscover.EnsureServiceResource(ctx, r.Client, site, svc.Name, svc.Namespace, resName, spec); err != nil {
-				logger.Error(err, "failed to ensure PublicResource for Service port", "resource", resName)
+				errs = append(errs, fmt.Errorf("ensure PublicResource for Service port %s: %w", resName, err))
 			}
 		}
 	} else {
 		resName, spec, ok := autodiscover.BuildSinglePortSpec(svc, annotations, cfg, siteRef, clusterHostname)
 		if !ok {
-			return
+			return nil
 		}
 		if err := autodiscover.EnsureServiceResource(ctx, r.Client, site, svc.Name, svc.Namespace, resName, spec); err != nil {
-			logger.Error(err, "failed to ensure PublicResource for Service", "resource", resName)
+			errs = append(errs, fmt.Errorf("ensure PublicResource for Service %s: %w", resName, err))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 func (r *Reconciler) ReconcileTCPRoute(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -499,21 +513,24 @@ func (r *Reconciler) ReconcileTCPRoute(ctx context.Context, req ctrl.Request) (c
 		return r.deleteOwnedResources(ctx, "tcproute", route.Name)
 	}
 
-	r.processTCPRoute(ctx, site, cfg, &route)
+	if err := r.processTCPRoute(ctx, site, cfg, &route); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) processTCPRoute(ctx context.Context, site *pangolinv1alpha1.NewtSite, cfg *pangolinv1alpha1.AutoDiscoverSpec, route *gatewayv1alpha2.TCPRoute) {
+func (r *Reconciler) processTCPRoute(ctx context.Context, site *pangolinv1alpha1.NewtSite, cfg *pangolinv1alpha1.AutoDiscoverSpec, route *gatewayv1alpha2.TCPRoute) error {
 	logger := log.FromContext(ctx)
 	spec, err := autodiscover.BuildTCPRouteSpec(route, route.GetAnnotations(), cfg, site.Name)
 	if err != nil {
 		logger.Error(err, "skipping TCPRoute", "route", route.Name)
-		return
+		return nil // build error is not retryable
 	}
 	resName := route.Name
 	if err := autodiscover.EnsureTCPRouteResource(ctx, r.Client, site, route.Name, route.Namespace, resName, spec); err != nil {
-		logger.Error(err, "failed to ensure PublicResource for TCPRoute", "route", route.Name)
+		return fmt.Errorf("ensure PublicResource for TCPRoute %s: %w", route.Name, err)
 	}
+	return nil
 }
 
 func (r *Reconciler) resolveSiteForTCPRoute(ctx context.Context, annotations map[string]string, route *gatewayv1alpha2.TCPRoute) (*pangolinv1alpha1.NewtSite, *pangolinv1alpha1.AutoDiscoverSpec, string, bool, error) {
@@ -576,7 +593,9 @@ func (r *Reconciler) scanHTTPRoutes(ctx context.Context, site *pangolinv1alpha1.
 			matched = autodiscover.RouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace)
 		}
 		if matched {
-			r.processHTTPRoute(ctx, site, cfg, route)
+			if err := r.processHTTPRoute(ctx, site, cfg, route); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -604,7 +623,9 @@ func (r *Reconciler) scanTCPRoutes(ctx context.Context, site *pangolinv1alpha1.N
 			matched = autodiscover.TCPRouteReferencesGateway(route, cfg.GatewayName, cfg.GatewayNamespace)
 		}
 		if matched {
-			r.processTCPRoute(ctx, site, cfg, route)
+			if err := r.processTCPRoute(ctx, site, cfg, route); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -628,7 +649,9 @@ func (r *Reconciler) scanServices(ctx context.Context, site *pangolinv1alpha1.Ne
 		if !ok || siteRef != site.Name {
 			continue
 		}
-		r.processService(ctx, site, cfg, p, svc)
+		if err := r.processService(ctx, site, cfg, p, svc); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -692,8 +715,8 @@ func (r *Reconciler) resolveSite(
 func (r *Reconciler) deleteOwnedResources(ctx context.Context, ownerKind, ownerName string) (ctrl.Result, error) {
 	var list pangolinv1alpha1.PublicResourceList
 	if err := r.List(ctx, &list, client.MatchingLabels{
-		"pangolin.home-operations.com/owner-kind": ownerKind,
-		"pangolin.home-operations.com/owner-name": ownerName,
+		shared.LabelOwnerKind: ownerKind,
+		shared.LabelOwnerName: ownerName,
 	}); err != nil {
 		return ctrl.Result{}, err
 	}

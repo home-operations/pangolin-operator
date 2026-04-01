@@ -14,6 +14,7 @@ import (
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
+	"github.com/home-operations/pangolin-operator/internal/controller/shared"
 )
 
 const (
@@ -161,7 +162,7 @@ func (r annotationResolver) headers() []pangolinv1alpha1.PublicHeaderSpec {
 }
 
 func (r annotationResolver) auth() *pangolinv1alpha1.PublicAuthSpec {
-	return buildAuth(r.annotations, r.cfg)
+	return buildAuth(r.annotations, r.prefix, r.cfg)
 }
 
 func (r annotationResolver) maintenance() *pangolinv1alpha1.PublicMaintenanceSpec {
@@ -279,9 +280,7 @@ func buildMaintenance(annotations map[string]string, prefix string) *pangolinv1a
 	}
 }
 
-func buildAuth(annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec) *pangolinv1alpha1.PublicAuthSpec {
-	prefix := annotationPrefix(cfg)
-
+func buildAuth(annotations map[string]string, prefix string, cfg *pangolinv1alpha1.AutoDiscoverSpec) *pangolinv1alpha1.PublicAuthSpec {
 	ssoEnabled := false
 	if v, ok := annotations[prefix+"/auth-sso"]; ok && isTruthy(v) {
 		ssoEnabled = true
@@ -381,8 +380,9 @@ func resolveBackendRef(ref gatewayv1.BackendObjectReference, routeNamespace stri
 	return
 }
 
-func RouteReferencesGateway(route *gatewayv1.HTTPRoute, gatewayName, gatewayNamespace string) bool {
-	for _, parent := range route.Spec.ParentRefs {
+// parentRefsMatch checks whether any of the given parentRefs reference the named gateway.
+func parentRefsMatch(refs []gatewayv1.ParentReference, gatewayName, gatewayNamespace string) bool {
+	for _, parent := range refs {
 		if parent.Name != gatewayv1.ObjectName(gatewayName) {
 			continue
 		}
@@ -392,6 +392,10 @@ func RouteReferencesGateway(route *gatewayv1.HTTPRoute, gatewayName, gatewayName
 		return true
 	}
 	return false
+}
+
+func RouteReferencesGateway(route *gatewayv1.HTTPRoute, gatewayName, gatewayNamespace string) bool {
+	return parentRefsMatch(route.Spec.ParentRefs, gatewayName, gatewayNamespace)
 }
 
 func HostnameToResourceName(sourceName, hostname string) string {
@@ -563,16 +567,7 @@ func serviceProtocol(p corev1.Protocol) string {
 }
 
 func TCPRouteReferencesGateway(route *gatewayv1alpha2.TCPRoute, gatewayName, gatewayNamespace string) bool {
-	for _, parent := range route.Spec.ParentRefs {
-		if parent.Name != gatewayv1.ObjectName(gatewayName) {
-			continue
-		}
-		if gatewayNamespace != "" && parent.Namespace != nil && string(*parent.Namespace) != gatewayNamespace {
-			continue
-		}
-		return true
-	}
-	return false
+	return parentRefsMatch(route.Spec.ParentRefs, gatewayName, gatewayNamespace)
 }
 
 func BuildTCPRouteSpec(route *gatewayv1alpha2.TCPRoute, annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec, siteRefFallback string) (pangolinv1alpha1.PublicResourceSpec, error) {
@@ -618,9 +613,9 @@ func ensureOwnedPublicResource(ctx context.Context, c client.Client, owner metav
 				Name:      resName,
 				Namespace: namespace,
 				Labels: map[string]string{
-					"pangolin.home-operations.com/owner-kind": ownerKind,
-					"pangolin.home-operations.com/owner-name": ownerName,
-					"pangolin.home-operations.com/site":       owner.GetName(),
+					shared.LabelOwnerKind: ownerKind,
+					shared.LabelOwnerName: ownerName,
+					shared.LabelSite:      owner.GetName(),
 				},
 				OwnerReferences: []metav1.OwnerReference{
 					{
@@ -637,13 +632,32 @@ func ensureOwnedPublicResource(ctx context.Context, c client.Client, owner metav
 		}
 		return c.Create(ctx, pr)
 	}
-	patch := client.MergeFrom(existing.DeepCopy())
-	existing.Spec = spec
+	// Skip the patch if spec and labels are already up-to-date.
+	needsPatch := false
 	if existing.Labels == nil {
 		existing.Labels = make(map[string]string, 3)
+		needsPatch = true
 	}
-	existing.Labels["pangolin.home-operations.com/owner-kind"] = ownerKind
-	existing.Labels["pangolin.home-operations.com/owner-name"] = ownerName
-	existing.Labels["pangolin.home-operations.com/site"] = owner.GetName()
+	if existing.Labels[shared.LabelOwnerKind] != ownerKind ||
+		existing.Labels[shared.LabelOwnerName] != ownerName ||
+		existing.Labels[shared.LabelSite] != owner.GetName() {
+		needsPatch = true
+	}
+
+	specJSON, _ := json.Marshal(spec)
+	existingJSON, _ := json.Marshal(existing.Spec)
+	if string(specJSON) != string(existingJSON) {
+		needsPatch = true
+	}
+
+	if !needsPatch {
+		return nil
+	}
+
+	patch := client.MergeFrom(existing.DeepCopy())
+	existing.Spec = spec
+	existing.Labels[shared.LabelOwnerKind] = ownerKind
+	existing.Labels[shared.LabelOwnerName] = ownerName
+	existing.Labels[shared.LabelSite] = owner.GetName()
 	return c.Patch(ctx, existing, patch)
 }

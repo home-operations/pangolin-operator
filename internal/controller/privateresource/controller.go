@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -18,13 +17,14 @@ import (
 
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 	ctrlresolve "github.com/home-operations/pangolin-operator/internal/controller/resolve"
+	"github.com/home-operations/pangolin-operator/internal/controller/shared"
 	"github.com/home-operations/pangolin-operator/internal/pangolin"
 )
 
 const (
 	PrivateResourceFinalizer = "pangolin.home-operations.com/privateresource-finalizer"
-	resyncInterval           = 10 * time.Minute
-	reconcileTimeout         = 2 * time.Minute
+	resyncInterval           = shared.ResyncInterval
+	reconcileTimeout         = shared.ReconcileTimeout
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=privateresources,verbs=get;list;watch;create;update;patch;delete
@@ -67,9 +67,11 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 
 	site, err := ctrlresolve.Site(ctx, r.Client, res.Spec.SiteRef)
 	if err != nil {
-		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 			setCondition(s, metav1.ConditionFalse, reasonPending, err.Error(), res.Generation)
-		})
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status")
+		}
 		if errors.Is(err, ctrlresolve.ErrNotFound) {
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
@@ -78,9 +80,11 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 
 	if site.Status.Phase != pangolinv1alpha1.NewtSitePhaseReady || site.Status.SiteID == 0 {
 		logger.Info("NewtSite not yet ready, requeueing", "site", res.Spec.SiteRef)
-		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 			setCondition(s, metav1.ConditionFalse, reasonPending, "waiting for NewtSite to become ready", res.Generation)
-		})
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status")
+		}
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -88,15 +92,19 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	adopted, err := r.ensureExists(ctx, res, site.Status.SiteID)
 	if err != nil {
 		if pangolin.IsBadRequest(err) {
-			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 				s.Phase = pangolinv1alpha1.PrivateResourcePhaseError
 				setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
-		_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 			setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
-		})
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status")
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -114,15 +122,19 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 		if err := r.updateSiteResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
 				logger.Info("Pangolin site resource no longer exists during update, will retry", "siteResourceID", res.Status.SiteResourceID)
-				_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+				if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 					s.SiteResourceID = 0
 					s.NiceID = ""
-				})
+				}); patchErr != nil {
+					logger.Error(patchErr, "failed to patch status")
+				}
 				return ctrl.Result{Requeue: true}, nil
 			}
-			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
-			})
+			}); patchErr != nil {
+				logger.Error(patchErr, "failed to patch status")
+			}
 			return ctrl.Result{}, err
 		}
 	}
@@ -277,13 +289,7 @@ func (r *Reconciler) patchStatus(ctx context.Context, res *pangolinv1alpha1.Priv
 }
 
 func setCondition(s *pangolinv1alpha1.PrivateResourceStatus, status metav1.ConditionStatus, reason, message string, generation int64) {
-	apimeta.SetStatusCondition(&s.Conditions, metav1.Condition{
-		Type:               conditionReady,
-		Status:             status,
-		ObservedGeneration: generation,
-		Reason:             reason,
-		Message:            message,
-	})
+	shared.SetCondition(&s.Conditions, status, reason, message, generation)
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -142,7 +142,7 @@ func TestUpdateResource_NameChange(t *testing.T) {
 		},
 		Status: pangolinv1alpha1.PublicResourceStatus{
 			ResourceID:  7,
-			TargetsHash: hashTargets(targets),
+			TargetsHash: hashJSON(targets),
 		},
 	}
 
@@ -207,7 +207,7 @@ func TestUpdateResource_TargetsChanged(t *testing.T) {
 		Status: pangolinv1alpha1.PublicResourceStatus{
 			ResourceID:  7,
 			TargetIDs:   []int{99},
-			TargetsHash: hashTargets(oldTargets), // stale hash
+			TargetsHash: hashJSON(oldTargets), // stale hash
 		},
 	}
 
@@ -266,7 +266,7 @@ func TestUpdateResource_TargetsUnchanged(t *testing.T) {
 		Status: pangolinv1alpha1.PublicResourceStatus{
 			ResourceID:  7,
 			TargetIDs:   []int{99},
-			TargetsHash: hashTargets(targets), // hash matches
+			TargetsHash: hashJSON(targets), // hash matches
 		},
 	}
 
@@ -517,7 +517,7 @@ func TestReconcile_DriftDetection_RecreatesWhenNotInList(t *testing.T) {
 			ResourceID:         7,
 			ObservedGeneration: 1, // steady state
 			TargetIDs:          []int{99},
-			TargetsHash:        hashTargets([]pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}}),
+			TargetsHash:        hashJSON([]pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}}),
 		},
 	}
 
@@ -581,7 +581,7 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 			ResourceID:         7,
 			ObservedGeneration: 1,
 			TargetIDs:          []int{99},
-			TargetsHash:        hashTargets(targets),
+			TargetsHash:        hashJSON(targets),
 		},
 	}
 

@@ -98,7 +98,7 @@ func TestCollector_Describe(t *testing.T) {
 	for d := range ch {
 		descs = append(descs, d)
 	}
-	if len(descs) != 2 {
-		t.Errorf("expected 2 descriptors, got %d", len(descs))
+	if len(descs) != 3 {
+		t.Errorf("expected 3 descriptors, got %d", len(descs))
 	}
 }

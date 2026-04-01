@@ -319,7 +319,7 @@ func TestCreateTarget(t *testing.T) {
 	c := newTestClient(t, mux)
 	got, err := c.CreateTarget(context.Background(), 7, CreateTargetRequest{
 		SiteID: 42,
-		Ip:     "10.0.0.1",
+		IP:     "10.0.0.1",
 		Port:   8080,
 	})
 	if err != nil {

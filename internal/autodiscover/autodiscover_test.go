@@ -257,14 +257,14 @@ func TestBuildMaintenance_Enabled(t *testing.T) {
 }
 
 func TestBuildAuth_NilWhenEmpty(t *testing.T) {
-	if buildAuth(map[string]string{}, defaultCfg()) != nil {
+	if buildAuth(map[string]string{}, DefaultAnnotationPrefix, defaultCfg()) != nil {
 		t.Error("expected nil auth when no auth annotations")
 	}
 }
 
 func TestBuildAuth_WhitelistFromAnnotation(t *testing.T) {
 	ann := map[string]string{"pangolin-operator/auth-whitelist-users": "a@b.com, c@d.com"}
-	got := buildAuth(ann, defaultCfg())
+	got := buildAuth(ann, DefaultAnnotationPrefix, defaultCfg())
 	if got == nil || len(got.WhitelistUsers) != 2 || got.WhitelistUsers[0] != "a@b.com" {
 		t.Errorf("unexpected auth: %+v", got)
 	}
@@ -272,7 +272,7 @@ func TestBuildAuth_WhitelistFromAnnotation(t *testing.T) {
 
 func TestBuildAuth_SecretRef(t *testing.T) {
 	ann := map[string]string{"pangolin-operator/auth-secret": "my-secret"}
-	got := buildAuth(ann, defaultCfg())
+	got := buildAuth(ann, DefaultAnnotationPrefix, defaultCfg())
 	if got == nil || got.AuthSecretRef != "my-secret" {
 		t.Errorf("unexpected auth: %+v", got)
 	}
@@ -284,7 +284,7 @@ func TestBuildAuth_SSO_DefaultsFromCfg(t *testing.T) {
 		AuthSSOUsers: "owner@example.com",
 		AuthSSOIDP:   5,
 	}
-	got := buildAuth(map[string]string{"pangolin-operator/auth-sso": "true"}, cfg)
+	got := buildAuth(map[string]string{"pangolin-operator/auth-sso": "true"}, DefaultAnnotationPrefix, cfg)
 	if got == nil || !got.SsoEnabled {
 		t.Fatal("expected SSO enabled")
 	}
@@ -303,7 +303,7 @@ func TestBuildAuth_SSO_AnnotationOverridesCfg(t *testing.T) {
 		"pangolin-operator/auth-sso-roles": "editor",
 		"pangolin-operator/auth-sso-idp":   "7",
 	}
-	got := buildAuth(ann, cfg)
+	got := buildAuth(ann, DefaultAnnotationPrefix, cfg)
 	if got == nil || len(got.SsoRoles) != 1 || got.SsoRoles[0] != "editor" || got.AutoLoginIdp != 7 {
 		t.Errorf("unexpected auth: %+v", got)
 	}

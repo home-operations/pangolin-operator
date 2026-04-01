@@ -426,7 +426,7 @@ func (c *Client) DeleteRule(ctx context.Context, resourceID, ruleID int) error {
 
 type CreateTargetRequest struct {
 	SiteID          int    `json:"siteId"`
-	Ip              string `json:"ip"`
+	IP              string `json:"ip"`
 	Port            int    `json:"port"`
 	Method          string `json:"method,omitempty"`
 	Enabled         *bool  `json:"enabled,omitempty"`

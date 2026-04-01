@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,9 +22,14 @@ var (
 		"Whether a NewtSite tunnel is online (1) or offline (0).",
 		[]string{"name", "namespace"}, nil,
 	)
+	collectErrorDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "collector", "errors_total"),
+		"Number of errors encountered while collecting metrics.",
+		[]string{"kind"}, nil,
+	)
 )
 
-const defaultPhase = "Pending"
+const defaultPhase = string(pangolinv1alpha1.NewtSitePhasePending)
 
 type ResourceCollector struct {
 	client client.Reader
@@ -36,6 +42,7 @@ func NewResourceCollector(c client.Reader) *ResourceCollector {
 func (c *ResourceCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- phaseDesc
 	ch <- onlineDesc
+	ch <- collectErrorDesc
 }
 
 func (c *ResourceCollector) Collect(ch chan<- prometheus.Metric) {
@@ -50,6 +57,8 @@ func (c *ResourceCollector) Collect(ch chan<- prometheus.Metric) {
 func (c *ResourceCollector) collectNewtSites(ctx context.Context, ch chan<- prometheus.Metric) {
 	var list pangolinv1alpha1.NewtSiteList
 	if err := c.client.List(ctx, &list); err != nil {
+		slog.Error("failed to list NewtSites for metrics", "error", err)
+		ch <- prometheus.MustNewConstMetric(collectErrorDesc, prometheus.CounterValue, 1, "newtsite")
 		return
 	}
 
@@ -76,6 +85,8 @@ func (c *ResourceCollector) collectNewtSites(ctx context.Context, ch chan<- prom
 func (c *ResourceCollector) collectPublicResources(ctx context.Context, ch chan<- prometheus.Metric) {
 	var list pangolinv1alpha1.PublicResourceList
 	if err := c.client.List(ctx, &list); err != nil {
+		slog.Error("failed to list PublicResources for metrics", "error", err)
+		ch <- prometheus.MustNewConstMetric(collectErrorDesc, prometheus.CounterValue, 1, "publicresource")
 		return
 	}
 
@@ -95,6 +106,8 @@ func (c *ResourceCollector) collectPublicResources(ctx context.Context, ch chan<
 func (c *ResourceCollector) collectPrivateResources(ctx context.Context, ch chan<- prometheus.Metric) {
 	var list pangolinv1alpha1.PrivateResourceList
 	if err := c.client.List(ctx, &list); err != nil {
+		slog.Error("failed to list PrivateResources for metrics", "error", err)
+		ch <- prometheus.MustNewConstMetric(collectErrorDesc, prometheus.CounterValue, 1, "privateresource")
 		return
 	}
 
