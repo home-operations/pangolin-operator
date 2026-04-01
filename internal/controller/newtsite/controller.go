@@ -68,7 +68,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if !controllerutil.ContainsFinalizer(&site, NewtSiteFinalizer) {
 		controllerutil.AddFinalizer(&site, NewtSiteFinalizer)
-		return ctrl.Result{}, r.Update(ctx, &site)
+		if err := r.Update(ctx, &site); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	reconcileCtx, cancel := context.WithTimeout(ctx, reconcileTimeout)

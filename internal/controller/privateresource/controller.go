@@ -55,7 +55,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if !controllerutil.ContainsFinalizer(&res, PrivateResourceFinalizer) {
 		controllerutil.AddFinalizer(&res, PrivateResourceFinalizer)
-		return ctrl.Result{}, r.Update(ctx, &res)
+		if err := r.Update(ctx, &res); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	reconcileCtx, cancel := context.WithTimeout(ctx, reconcileTimeout)
