@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.1.0](https://github.com/home-operations/pangolin-operator/compare/0.0.5...0.1.0) (2026-04-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **github-action:** Update action azure/setup-helm (v4.3.1 → v5.0.0) ([#16](https://github.com/home-operations/pangolin-operator/issues/16))
+
+### Features
+
+* **container:** update image golangci/golangci-lint (v2.9.0 → v2.11.4) ([#5](https://github.com/home-operations/pangolin-operator/issues/5)) ([e927311](https://github.com/home-operations/pangolin-operator/commit/e927311d71109c01269d21f42b76c56d09ecaf17))
+
+
+### Bug Fixes
+
+* don't return early after adding finalizer ([eeb00fb](https://github.com/home-operations/pangolin-operator/commit/eeb00fb70529d94c8eacd20c6f73c4df226c15fa))
+* unpin helm version and ping helm unittest ([dd85725](https://github.com/home-operations/pangolin-operator/commit/dd857255f591a98e98605a209b90df0433995210))
+
+
+### Miscellaneous Chores
+
+* **ci:** tidy up actions ([7bb71e3](https://github.com/home-operations/pangolin-operator/commit/7bb71e3446575ca2d0513bff71bb7084c2bbfe9c))
+* cleanup duplicates ([16223fe](https://github.com/home-operations/pangolin-operator/commit/16223fe77c17dd0b936878f8109f871d8cae4f66))
+* improve backward compatibility with update site ([1bf3410](https://github.com/home-operations/pangolin-operator/commit/1bf341033064b69d6a69601c8472b6ed559d940b))
+* more cleanup ([a844afc](https://github.com/home-operations/pangolin-operator/commit/a844afc4fe07859e99d5ef7b93d7a4acca91529a))
+* more cleanup ([4a55e7e](https://github.com/home-operations/pangolin-operator/commit/4a55e7ebdcc4c8da65b8f4ab2b6c8ac36ac90df8))
+* share more code between controllers ([0eddd34](https://github.com/home-operations/pangolin-operator/commit/0eddd344a4ebb2a0cff4b1e41511b2bfb6180a0e))
+* simplify and unify autodiscover logic ([80e758e](https://github.com/home-operations/pangolin-operator/commit/80e758e0c52fa71696b0bd0f17e835d41120fbfb))
+
+
+### Continuous Integration
+
+* **github-action:** Update action azure/setup-helm (v4.3.1 → v5.0.0) ([#16](https://github.com/home-operations/pangolin-operator/issues/16)) ([219a539](https://github.com/home-operations/pangolin-operator/commit/219a539504675fd925d7e5a0899f0815333766a3))
+
 ## [0.0.5](https://github.com/home-operations/pangolin-operator/compare/0.0.4...0.0.5) (2026-03-31)
 
 
