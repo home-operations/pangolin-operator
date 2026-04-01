@@ -383,6 +383,30 @@ func TestCreateSiteResource(t *testing.T) {
 	}
 }
 
+func TestListSites(t *testing.T) {
+	want := []SiteItem{
+		{SiteID: 10, NiceID: "nice-10", Name: "my-site", Type: "newt"},
+		{SiteID: 11, NiceID: "nice-11", Name: "other-site", Type: "local"},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/test-org/sites", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		apiResponse(t, w, listSitesResponse{Sites: want})
+	})
+
+	c := newTestClient(t, mux)
+	got, err := c.ListSites(context.Background(), "my-site")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 || got[0].SiteID != 10 || got[1].SiteID != 11 {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
 func TestListSiteResources(t *testing.T) {
 	want := []SiteResourceItem{
 		{SiteResourceID: 55, Name: "priv-res", Mode: "host"},

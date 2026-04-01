@@ -104,14 +104,114 @@ func TestUpdateSite_SkipsAPIWhenNameUnchanged(t *testing.T) {
 	}
 }
 
-// TestReconcile_CreateSite_PassesAddress verifies the full reconcile path for a new
-// site: PickSiteDefaults is called, CreateSite receives the clientAddress, and the
-// credential Secret is created.
+func TestFSindOrCreate_AdoptsExistingSite(t *testing.T) {
+	createCalled := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/sites", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, struct {
+			Sites []pangolin.SiteItem `json:"sites"`
+		}{
+			Sites: []pangolin.SiteItem{
+				{SiteID: 99, NiceID: "nice-99", Name: "my-site", Type: "newt"},
+			},
+		})
+	})
+	mux.HandleFunc("/v1/org/org1/site", func(w http.ResponseWriter, r *http.Request) {
+		createCalled = true
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResponse{SiteID: 100, NiceID: "nice-100"})
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	site := &pangolinv1alpha1.NewtSite{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
+		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(site).
+		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+
+	if err := r.findOrCreate(context.Background(), site); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if createCalled {
+		t.Error("expected CreateSite NOT to be called when an existing site is found")
+	}
+
+	var updated pangolinv1alpha1.NewtSite
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(site), &updated); err != nil {
+		t.Fatalf("could not get updated site: %v", err)
+	}
+	if updated.Status.SiteID != 99 {
+		t.Errorf("expected SiteID 99, got %d", updated.Status.SiteID)
+	}
+	if updated.Status.NiceID != "nice-99" {
+		t.Errorf("expected NiceID 'nice-99', got %q", updated.Status.NiceID)
+	}
+}
+
+func TestFindOrCreate_CreatesWhenNotFound(t *testing.T) {
+	createCalled := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/sites", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, struct {
+			Sites []pangolin.SiteItem `json:"sites"`
+		}{})
+	})
+	mux.HandleFunc("/v1/org/org1/pick-site-defaults", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, pangolin.PickSiteDefaultsResponse{
+			NewtID: "nid", NewtSecret: "nsec", ClientAddress: "100.90.0.1",
+		})
+	})
+	mux.HandleFunc("/v1/org/org1/site", func(w http.ResponseWriter, r *http.Request) {
+		createCalled = true
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResponse{SiteID: 100, NiceID: "nice-100"})
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	site := &pangolinv1alpha1.NewtSite{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
+		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(site).
+		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+
+	if err := r.findOrCreate(context.Background(), site); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !createCalled {
+		t.Error("expected CreateSite to be called when no existing site is found")
+	}
+}
+
 func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 	const clientAddress = "100.90.128.1"
 	createSiteCalled := false
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/sites", func(w http.ResponseWriter, r *http.Request) {
+		testutil.PangolinResponse(t, w, struct {
+			Sites []pangolin.SiteItem `json:"sites"`
+		}{})
+	})
 	mux.HandleFunc("/v1/org/org1/pick-site-defaults", func(w http.ResponseWriter, r *http.Request) {
 		testutil.PangolinResponse(t, w, pangolin.PickSiteDefaultsResponse{
 			NewtID:        "nid",

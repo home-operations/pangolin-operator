@@ -84,7 +84,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 	logger := log.FromContext(ctx)
 
 	if site.Status.SiteID == 0 {
-		if err := r.createSite(ctx, site); err != nil {
+		if err := r.findOrCreate(ctx, site); err != nil {
 			if pangolin.IsBadRequest(err) {
 				if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 					s.Phase = pangolinv1alpha1.NewtSitePhaseError
@@ -188,6 +188,35 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 		interval = 5 * time.Minute
 	}
 	return ctrl.Result{RequeueAfter: interval}, nil
+}
+
+func (r *Reconciler) findOrCreate(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {
+	logger := log.FromContext(ctx)
+
+	items, err := r.PangolinClient.ListSites(ctx, site.Spec.Name)
+	if err != nil {
+		return fmt.Errorf("ListSites: %w", err)
+	}
+
+	if match := findSite(items, site.Spec.Name); match != nil {
+		logger.Info("Adopting existing Pangolin site", "siteID", match.SiteID, "niceID", match.NiceID)
+		return r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
+			s.SiteID = match.SiteID
+			s.NiceID = match.NiceID
+			s.Phase = pangolinv1alpha1.NewtSitePhaseCreating
+		})
+	}
+
+	return r.createSite(ctx, site)
+}
+
+func findSite(items []pangolin.SiteItem, name string) *pangolin.SiteItem {
+	for i := range items {
+		if items[i].Name == name {
+			return &items[i]
+		}
+	}
+	return nil
 }
 
 func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.NewtSite) error {

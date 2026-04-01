@@ -63,6 +63,7 @@ type API interface {
 	PickSiteDefaults(ctx context.Context) (*PickSiteDefaultsResponse, error)
 	CreateSite(ctx context.Context, req CreateSiteRequest) (*CreateSiteResponse, error)
 	GetSite(ctx context.Context, siteID int) (*GetSiteResponse, error)
+	ListSites(ctx context.Context, query string) ([]SiteItem, error)
 	UpdateSite(ctx context.Context, siteID int, req UpdateSiteRequest) error
 	DeleteSite(ctx context.Context, siteID int) error
 
@@ -270,6 +271,34 @@ func (c *Client) DeleteSite(ctx context.Context, siteID int) error {
 		return fmt.Errorf("DeleteSite(%d): %w", siteID, err)
 	}
 	return nil
+}
+
+type SiteItem struct {
+	SiteID int    `json:"siteId"`
+	NiceID string `json:"niceId"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+}
+
+type listSitesResponse struct {
+	Sites []SiteItem `json:"sites"`
+}
+
+func (c *Client) ListSites(ctx context.Context, query string) ([]SiteItem, error) {
+	var all []SiteItem
+	for page := 1; ; page++ {
+		u := fmt.Sprintf("%s/org/%s/sites?pageSize=%d&page=%d&query=%s",
+			c.apiBase(), c.orgID, listPageSize, page, neturl.QueryEscape(query))
+		var out listSitesResponse
+		if err := c.do(ctx, http.MethodGet, u, nil, &out); err != nil {
+			return nil, fmt.Errorf("ListSites: %w", err)
+		}
+		all = append(all, out.Sites...)
+		if len(out.Sites) < listPageSize {
+			break
+		}
+	}
+	return all, nil
 }
 
 type Domain struct {
