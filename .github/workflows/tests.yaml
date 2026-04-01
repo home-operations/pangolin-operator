@@ -10,6 +10,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Run on Ubuntu
@@ -23,7 +27,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Running Unit Tests
-        run: |-
+      - name: Check go.mod tidiness
+        run: |
           go mod tidy
-          make test
+          git diff --exit-code go.mod go.sum
+
+      - name: Running Unit Tests
+        run: make test
