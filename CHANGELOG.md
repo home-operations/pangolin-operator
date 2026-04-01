@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/home-operations/pangolin-operator/compare/0.1.0...0.1.1) (2026-04-01)
+
+
+### Features
+
+* find or create newt site instead of always creating it ([cabcb83](https://github.com/home-operations/pangolin-operator/commit/cabcb83126d2e28fc321e48a7cf81126f47d9130))
+
 ## [0.1.0](https://github.com/home-operations/pangolin-operator/compare/0.0.5...0.1.0) (2026-04-01)
 
 
