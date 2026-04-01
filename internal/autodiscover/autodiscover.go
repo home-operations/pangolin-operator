@@ -515,18 +515,11 @@ func BuildSinglePortSpec(svc *corev1.Service, annotations map[string]string, cfg
 	displayName := r.name(fmt.Sprintf("%s-%s", svc.Name, portName))
 
 	if fullDomain != "" {
-		extras := r.targetExtras(pangolinv1alpha1.PublicTargetSpec{})
-		target := pangolinv1alpha1.PublicTargetSpec{
-			Hostname:        clusterHostname,
-			Port:            int(selected.Port),
-			Method:          r.method(methodHTTP),
-			Enabled:         extras.Enabled,
-			Path:            extras.Path,
-			PathMatchType:   extras.PathMatchType,
-			RewritePath:     extras.RewritePath,
-			RewritePathType: extras.RewritePathType,
-			Priority:        extras.Priority,
-		}
+		target := r.targetExtras(pangolinv1alpha1.PublicTargetSpec{
+			Hostname: clusterHostname,
+			Port:     int(selected.Port),
+			Method:   r.method(methodHTTP),
+		})
 		resName := HostnameToResourceName(svc.Name, fullDomain)
 		return resName, r.buildHTTPSpec(siteRef, displayName, fullDomain, r.enabledOr(false), target), true
 	}
