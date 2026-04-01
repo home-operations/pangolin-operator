@@ -426,8 +426,8 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first reconcile: %v", err)
 	}
-	if !result.Requeue {
-		t.Error("expected Requeue after 404 reset")
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter after 404 reset")
 	}
 
 	var reset pangolinv1alpha1.PrivateResource

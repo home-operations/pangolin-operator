@@ -86,14 +86,14 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 			if pangolin.IsBadRequest(err) {
 				if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 					s.Phase = pangolinv1alpha1.NewtSitePhaseError
-					setCondition(s, metav1.ConditionFalse, shared.ReasonPermanentError, err.Error(), site.Generation)
+					shared.SetCondition(&s.Conditions, metav1.ConditionFalse, shared.ReasonPermanentError, err.Error(), site.Generation)
 				}); patchErr != nil {
 					logger.Error(patchErr, "failed to patch status")
 				}
-				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+				return ctrl.Result{}, reconcile.TerminalError(err)
 			}
 			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
-				setCondition(s, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
+				shared.SetCondition(&s.Conditions, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
 			}); patchErr != nil {
 				logger.Error(patchErr, "failed to patch status")
 			}
@@ -116,7 +116,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 				return ctrl.Result{RequeueAfter: time.Second}, nil
 			}
 			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
-				setCondition(s, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
+				shared.SetCondition(&s.Conditions, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
 			}); patchErr != nil {
 				logger.Error(patchErr, "failed to patch status")
 			}
@@ -144,7 +144,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 	if site.Spec.Type != shared.SiteTypeLocal {
 		if err := r.ensureServiceAccount(ctx, site); err != nil {
 			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
-				setCondition(s, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
+				shared.SetCondition(&s.Conditions, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
 			}); patchErr != nil {
 				logger.Error(patchErr, "failed to patch status")
 			}
@@ -152,7 +152,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 		}
 		if err := r.ensureDeployment(ctx, site); err != nil {
 			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
-				setCondition(s, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
+				shared.SetCondition(&s.Conditions, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
 			}); patchErr != nil {
 				logger.Error(patchErr, "failed to patch status")
 			}
@@ -168,7 +168,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 		s.Phase = pangolinv1alpha1.NewtSitePhaseReady
 		s.ObservedGeneration = site.Generation
 		s.Online = online
-		setCondition(s, metav1.ConditionTrue, shared.ReasonReconciled, "site reconciled successfully", site.Generation)
+		shared.SetCondition(&s.Conditions, metav1.ConditionTrue, shared.ReasonReconciled, "site reconciled successfully", site.Generation)
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -361,10 +361,6 @@ func (r *Reconciler) patchStatus(ctx context.Context, site *pangolinv1alpha1.New
 	patch := client.MergeFrom(site.DeepCopy())
 	mutate(&site.Status)
 	return r.Status().Patch(ctx, site, patch)
-}
-
-func setCondition(s *pangolinv1alpha1.NewtSiteStatus, status metav1.ConditionStatus, reason, message string, generation int64) {
-	shared.SetCondition(&s.Conditions, status, reason, message, generation)
 }
 
 func (r *Reconciler) ReconcileHTTPRoute(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -634,7 +635,7 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 }
 
 // TestLifecycle_400BadRequest_SetsErrorPhase verifies that a 400 from CreateResource
-// sets the phase to Error and requeues with backoff.
+// sets the phase to Error and returns a terminal error (no requeue).
 func TestLifecycle_400BadRequest_SetsErrorPhase(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
@@ -671,14 +672,14 @@ func TestLifecycle_400BadRequest_SetsErrorPhase(t *testing.T) {
 
 	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	result, err := r.Reconcile(context.Background(), ctrl.Request{
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "bad-res", Namespace: "default"},
 	})
-	if err != nil {
-		t.Fatalf("expected no error on 400 (handled), got: %v", err)
+	if err == nil {
+		t.Fatal("expected terminal error on 400 bad request")
 	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected RequeueAfter on 400 bad request")
+	if !strings.Contains(err.Error(), "terminal") {
+		t.Errorf("expected terminal error, got: %v", err)
 	}
 
 	var updated pangolinv1alpha1.PublicResource
@@ -763,8 +764,8 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first reconcile: %v", err)
 	}
-	if !result.Requeue {
-		t.Error("expected Requeue after 404 reset")
+	if result.RequeueAfter == 0 {
+		t.Error("expected RequeueAfter after 404 reset")
 	}
 
 	var reset pangolinv1alpha1.PublicResource
