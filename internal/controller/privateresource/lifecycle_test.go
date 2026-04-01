@@ -144,6 +144,7 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 // site resource already exists, the operator adopts it instead of creating a new one.
 func TestLifecycle_AdoptExistingSiteResource(t *testing.T) {
 	createCalled := false
+	updateCalled := false
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
@@ -156,6 +157,12 @@ func TestLifecycle_AdoptExistingSiteResource(t *testing.T) {
 	mux.HandleFunc("/v1/org/org1/site-resource", func(w http.ResponseWriter, _ *http.Request) {
 		createCalled = true
 		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 999})
+	})
+	mux.HandleFunc("/v1/site-resource/77", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			updateCalled = true
+			testutil.PangolinResponse(t, w, nil)
+		}
 	})
 
 	srv := httptest.NewServer(mux)
@@ -192,6 +199,9 @@ func TestLifecycle_AdoptExistingSiteResource(t *testing.T) {
 	if createCalled {
 		t.Error("expected no CreateSiteResource call when adopting")
 	}
+	if !updateCalled {
+		t.Error("expected UpdateSiteResource to be called after adoption to sync spec")
+	}
 
 	var updated pangolinv1alpha1.PrivateResource
 	if err := cl.Get(context.Background(), nn, &updated); err != nil {
@@ -199,6 +209,156 @@ func TestLifecycle_AdoptExistingSiteResource(t *testing.T) {
 	}
 	if updated.Status.SiteResourceID != 77 {
 		t.Errorf("expected adopted SiteResourceID=77, got %d", updated.Status.SiteResourceID)
+	}
+}
+
+// TestLifecycle_CreateThenSteadyState verifies that a second reconcile after
+// a successful create is a no-op: no extra create or update calls.
+func TestLifecycle_CreateThenSteadyState(t *testing.T) {
+	var (
+		createCalls atomic.Int32
+		updateCalls atomic.Int32
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
+		if createCalls.Load() == 0 {
+			testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
+			return
+		}
+		testutil.PangolinResponse(t, w, map[string]any{
+			"siteResources": []pangolin.SiteResourceItem{
+				{SiteResourceID: 20, NiceID: "sr-20", Name: "my-vpn", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+			},
+		})
+	})
+	mux.HandleFunc("/v1/org/org1/site-resource", func(w http.ResponseWriter, _ *http.Request) {
+		createCalls.Add(1)
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 20, NiceID: "sr-20"})
+	})
+	mux.HandleFunc("/v1/site-resource/20", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			updateCalls.Add(1)
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PrivateResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-vpn",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{PrivateResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PrivateResourceSpec{
+			SiteRef:     "my-site",
+			Name:        "my-vpn",
+			Mode:        "host",
+			Destination: "10.0.0.5",
+			TcpPorts:    "*",
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	nn := types.NamespacedName{Name: "my-vpn", Namespace: "default"}
+
+	// First reconcile: create.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("create reconcile: %v", err)
+	}
+	if createCalls.Load() != 1 {
+		t.Fatalf("expected 1 create, got %d", createCalls.Load())
+	}
+
+	createsAfter := createCalls.Load()
+	updatesAfter := updateCalls.Load()
+
+	// Second reconcile (steady-state): must be a no-op.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("steady-state reconcile: %v", err)
+	}
+	if createCalls.Load() != createsAfter {
+		t.Error("steady-state reconcile must not create a new resource")
+	}
+	if updateCalls.Load() != updatesAfter {
+		t.Error("steady-state reconcile must not call UpdateSiteResource")
+	}
+}
+
+// TestLifecycle_AdoptThenSteadyState verifies that a second reconcile after
+// adoption + update is a no-op.
+func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
+	var updateCalls atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{
+			"siteResources": []pangolin.SiteResourceItem{
+				{SiteResourceID: 77, NiceID: "sr-77", Name: "my-vpn", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+			},
+		})
+	})
+	mux.HandleFunc("/v1/site-resource/77", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			updateCalls.Add(1)
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PrivateResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-vpn",
+			Namespace:  "default",
+			Finalizers: []string{PrivateResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PrivateResourceSpec{
+			SiteRef:     "my-site",
+			Name:        "my-vpn",
+			Mode:        "host",
+			Destination: "10.0.0.5",
+			TcpPorts:    "*",
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	nn := types.NamespacedName{Name: "my-vpn", Namespace: "default"}
+
+	// First reconcile: adopt + update.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("adopt reconcile: %v", err)
+	}
+	if updateCalls.Load() != 1 {
+		t.Fatalf("expected 1 update after adoption, got %d", updateCalls.Load())
+	}
+
+	updatesAfter := updateCalls.Load()
+
+	// Second reconcile (steady-state): must be a no-op.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("steady-state reconcile: %v", err)
+	}
+	if updateCalls.Load() != updatesAfter {
+		t.Error("steady-state reconcile after adopt must not call UpdateSiteResource again")
 	}
 }
 

@@ -456,14 +456,14 @@ func (r *Reconciler) processService(ctx context.Context, site *pangolinv1alpha1.
 	hasFullDomain := len(annotations[prefix+"/full-domain"]) > 0
 
 	if !hasFullDomain && autodiscover.ResolveAllPorts(annotations, prefix, cfg) {
-		specs := autodiscover.BuildAllPortSpecs(svc, annotations, prefix, siteRef, clusterHostname)
+		specs := autodiscover.BuildAllPortSpecs(svc, annotations, cfg, siteRef, clusterHostname)
 		for resName, spec := range specs {
 			if err := autodiscover.EnsureServiceResource(ctx, r.Client, site, svc.Name, svc.Namespace, resName, spec); err != nil {
 				logger.Error(err, "failed to ensure PublicResource for Service port", "resource", resName)
 			}
 		}
 	} else {
-		resName, spec, ok := autodiscover.BuildSinglePortSpec(svc, annotations, prefix, siteRef, clusterHostname, cfg)
+		resName, spec, ok := autodiscover.BuildSinglePortSpec(svc, annotations, cfg, siteRef, clusterHostname)
 		if !ok {
 			return
 		}

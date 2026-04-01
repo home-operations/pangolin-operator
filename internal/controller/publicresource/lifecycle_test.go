@@ -164,6 +164,7 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 // already exists with a matching name+domain, the operator adopts it.
 func TestLifecycle_AdoptExistingResource(t *testing.T) {
 	createCalled := false
+	updateCalled := false
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
@@ -179,6 +180,7 @@ func TestLifecycle_AdoptExistingResource(t *testing.T) {
 	})
 	mux.HandleFunc("/v1/resource/42", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
+			updateCalled = true
 			testutil.PangolinResponse(t, w, nil)
 		}
 	})
@@ -220,6 +222,9 @@ func TestLifecycle_AdoptExistingResource(t *testing.T) {
 	if createCalled {
 		t.Error("expected CreateResource NOT to be called when adopting existing resource")
 	}
+	if !updateCalled {
+		t.Error("expected UpdateResource to be called after adoption to sync spec")
+	}
 
 	var updated pangolinv1alpha1.PublicResource
 	if err := cl.Get(context.Background(), nn, &updated); err != nil {
@@ -227,6 +232,253 @@ func TestLifecycle_AdoptExistingResource(t *testing.T) {
 	}
 	if updated.Status.ResourceID != 42 {
 		t.Errorf("expected adopted ResourceID=42, got %d", updated.Status.ResourceID)
+	}
+}
+
+// TestLifecycle_ReAdoptWithStaleHashes verifies that when a previously-reconciled
+// resource is re-adopted (Pangolin resource disappeared and a new one matched),
+// stale TargetsHash/RulesHash are cleared so targets and rules are recreated.
+func TestLifecycle_ReAdoptWithStaleHashes(t *testing.T) {
+	var createTargetCalls atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
+		// The old resource (ID=10) is gone; a new one (ID=77) matches.
+		testutil.PangolinResponse(t, w, map[string]any{
+			"resources": []pangolin.ResourceItem{
+				{ResourceID: 77, NiceID: "r-77", Name: "my-app", FullDomain: "app.example.com"},
+			},
+		})
+	})
+	mux.HandleFunc("/v1/resource/77", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
+	mux.HandleFunc("/v1/resource/77/target", func(w http.ResponseWriter, _ *http.Request) {
+		createTargetCalls.Add(1)
+		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 200})
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	targets := []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80, Method: "http"}}
+	res := &pangolinv1alpha1.PublicResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-app",
+			Namespace:  "default",
+			Finalizers: []string{PublicResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PublicResourceSpec{
+			SiteRef:    "my-site",
+			Name:       "my-app",
+			Protocol:   "http",
+			FullDomain: "app.example.com",
+			Targets:    targets,
+		},
+		Status: pangolinv1alpha1.PublicResourceStatus{
+			// Simulate a previously-reconciled resource with stale hashes.
+			ResourceID:  10,
+			NiceID:      "r-10",
+			TargetIDs:   []int{99},
+			TargetsHash: hashTargets(targets),
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	if createTargetCalls.Load() == 0 {
+		t.Error("expected targets to be recreated on re-adopted resource (stale hashes should have been cleared)")
+	}
+
+	var updated pangolinv1alpha1.PublicResource
+	if err := cl.Get(context.Background(), nn, &updated); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if updated.Status.ResourceID != 77 {
+		t.Errorf("expected adopted ResourceID=77, got %d", updated.Status.ResourceID)
+	}
+}
+
+// TestLifecycle_CreateThenSteadyState verifies that a second reconcile after
+// a successful create is a no-op: no extra create, update, or target calls.
+func TestLifecycle_CreateThenSteadyState(t *testing.T) {
+	var (
+		createResourceCalls atomic.Int32
+		updateResourceCalls atomic.Int32
+		createTargetCalls   atomic.Int32
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
+		if createResourceCalls.Load() == 0 {
+			testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+			return
+		}
+		testutil.PangolinResponse(t, w, map[string]any{
+			"resources": []pangolin.ResourceItem{{ResourceID: 10, Name: "my-app", NiceID: "r-10"}},
+		})
+	})
+	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, _ *http.Request) {
+		createResourceCalls.Add(1)
+		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 10, NiceID: "r-10"})
+	})
+	mux.HandleFunc("/v1/resource/10/target", func(w http.ResponseWriter, _ *http.Request) {
+		createTargetCalls.Add(1)
+		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 50})
+	})
+	mux.HandleFunc("/v1/resource/10", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			updateResourceCalls.Add(1)
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PublicResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-app",
+			Namespace:  "default",
+			Generation: 1,
+			Finalizers: []string{PublicResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PublicResourceSpec{
+			SiteRef:  "my-site",
+			Name:     "my-app",
+			Protocol: "tcp",
+			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}},
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+
+	// First reconcile: create.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("create reconcile: %v", err)
+	}
+	if createResourceCalls.Load() != 1 {
+		t.Fatalf("expected 1 create, got %d", createResourceCalls.Load())
+	}
+
+	// Snapshot counters after create.
+	createsAfter := createResourceCalls.Load()
+	updatesAfter := updateResourceCalls.Load()
+	targetsAfter := createTargetCalls.Load()
+
+	// Second reconcile (steady-state requeue, no spec change): must be a no-op.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("steady-state reconcile: %v", err)
+	}
+	if createResourceCalls.Load() != createsAfter {
+		t.Error("steady-state reconcile must not create a new resource")
+	}
+	if updateResourceCalls.Load() != updatesAfter {
+		t.Error("steady-state reconcile must not call UpdateResource")
+	}
+	if createTargetCalls.Load() != targetsAfter {
+		t.Error("steady-state reconcile must not create new targets")
+	}
+}
+
+// TestLifecycle_AdoptThenSteadyState verifies that a second reconcile after
+// adoption + update is a no-op.
+func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
+	var (
+		updateResourceCalls atomic.Int32
+		createTargetCalls   atomic.Int32
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{
+			"resources": []pangolin.ResourceItem{
+				{ResourceID: 42, NiceID: "r-42", Name: "my-app", FullDomain: "app.example.com"},
+			},
+		})
+	})
+	mux.HandleFunc("/v1/resource/42", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			updateResourceCalls.Add(1)
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
+	mux.HandleFunc("/v1/resource/42/target", func(w http.ResponseWriter, _ *http.Request) {
+		createTargetCalls.Add(1)
+		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 1})
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PublicResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-app",
+			Namespace:  "default",
+			Finalizers: []string{PublicResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PublicResourceSpec{
+			SiteRef:    "my-site",
+			Name:       "my-app",
+			Protocol:   "http",
+			FullDomain: "app.example.com",
+			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80, Method: "http"}},
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+
+	// First reconcile: adopt + update.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("adopt reconcile: %v", err)
+	}
+	if updateResourceCalls.Load() != 1 {
+		t.Fatalf("expected 1 update after adoption, got %d", updateResourceCalls.Load())
+	}
+
+	// Snapshot counters after adopt.
+	updatesAfter := updateResourceCalls.Load()
+	targetsAfter := createTargetCalls.Load()
+
+	// Second reconcile (steady-state): must be a no-op.
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("steady-state reconcile: %v", err)
+	}
+	if updateResourceCalls.Load() != updatesAfter {
+		t.Error("steady-state reconcile after adopt must not call UpdateResource again")
+	}
+	if createTargetCalls.Load() != targetsAfter {
+		t.Error("steady-state reconcile after adopt must not create targets again")
 	}
 }
 

@@ -85,7 +85,8 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 	}
 
 	hadID := res.Status.SiteResourceID != 0
-	if err := r.ensureExists(ctx, res, site.Status.SiteID); err != nil {
+	adopted, err := r.ensureExists(ctx, res, site.Status.SiteID)
+	if err != nil {
 		if pangolin.IsBadRequest(err) {
 			_ = r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 				s.Phase = pangolinv1alpha1.PrivateResourcePhaseError
@@ -99,15 +100,17 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 		return ctrl.Result{}, err
 	}
 
-	// After create/adopt the informer cache may still hold stale status;
-	// only re-fetch and attempt update for previously-existing resources.
-	if hadID {
+	// Re-fetch so the update check sees the latest ObservedGeneration.
+	// Skip when we just adopted — the in-memory res already has the correct
+	// SiteResourceID from patchStatus; a cache read could return stale data.
+	if hadID && !adopted {
 		if err := r.Get(ctx, client.ObjectKeyFromObject(res), res); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	if hadID && res.Status.SiteResourceID != 0 && res.Generation != res.Status.ObservedGeneration {
+	needsUpdate := adopted || (hadID && res.Status.SiteResourceID != 0 && res.Generation != res.Status.ObservedGeneration)
+	if needsUpdate {
 		if err := r.updateSiteResource(ctx, res, site.Status.SiteID); err != nil {
 			if pangolin.IsNotFound(err) {
 				logger.Info("Pangolin site resource no longer exists during update, will retry", "siteResourceID", res.Status.SiteResourceID)
@@ -137,13 +140,14 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Privat
 }
 
 // ensureExists verifies that the Pangolin site resource exists, adopting an
-// existing one or creating a new one as needed.
-func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
+// existing one or creating a new one as needed. It returns adopted=true when an
+// existing Pangolin resource was linked so the caller knows to apply the spec.
+func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) (adopted bool, err error) {
 	logger := log.FromContext(ctx)
 
 	items, err := r.PangolinClient.ListSiteResources(ctx, res.Spec.Name)
 	if err != nil {
-		return fmt.Errorf("ListSiteResources: %w", err)
+		return false, fmt.Errorf("ListSiteResources: %w", err)
 	}
 
 	match := findSiteResource(items, res.Spec, siteID)
@@ -151,7 +155,7 @@ func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.Pri
 	if res.Status.SiteResourceID != 0 {
 		for _, item := range items {
 			if item.SiteResourceID == res.Status.SiteResourceID {
-				return nil // Still exists, nothing to do.
+				return false, nil // Still exists, nothing to do.
 			}
 		}
 		logger.Info("Pangolin site resource no longer exists", "siteResourceID", res.Status.SiteResourceID)
@@ -159,14 +163,14 @@ func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.Pri
 
 	if match != nil {
 		logger.Info("Adopting existing Pangolin site resource", "siteResourceID", match.SiteResourceID)
-		return r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
+		return true, r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 			s.SiteResourceID = match.SiteResourceID
 			s.NiceID = match.NiceID
 			s.Phase = pangolinv1alpha1.PrivateResourcePhaseCreating
 		})
 	}
 
-	return r.createSiteResource(ctx, res, siteID)
+	return false, r.createSiteResource(ctx, res, siteID)
 }
 
 // findSiteResource returns the first item matching by Name + Destination + Mode + SiteID.
