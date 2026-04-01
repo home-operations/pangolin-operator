@@ -74,7 +74,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 	site, err := ctrlresolve.Site(ctx, r.Client, res.Spec.SiteRef)
 	if err != nil {
 		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-			setCondition(s, metav1.ConditionFalse, reasonPending, err.Error(), res.Generation)
+			setCondition(s, metav1.ConditionFalse, shared.ReasonPending, err.Error(), res.Generation)
 		}); patchErr != nil {
 			logger.Error(patchErr, "failed to patch status")
 		}
@@ -87,7 +87,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 	if site.Status.Phase != pangolinv1alpha1.NewtSitePhaseReady || site.Status.SiteID == 0 {
 		logger.Info("NewtSite not yet ready, requeueing", "site", res.Spec.SiteRef)
 		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-			setCondition(s, metav1.ConditionFalse, reasonPending, "waiting for NewtSite to become ready", res.Generation)
+			setCondition(s, metav1.ConditionFalse, shared.ReasonPending, "waiting for NewtSite to become ready", res.Generation)
 		}); patchErr != nil {
 			logger.Error(patchErr, "failed to patch status")
 		}
@@ -100,7 +100,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 		if pangolin.IsConflict(err) {
 			logger.Info("Pangolin resource already exists with that domain; manual intervention required", "error", err)
 			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-				setCondition(s, metav1.ConditionFalse, reasonPending,
+				setCondition(s, metav1.ConditionFalse, shared.ReasonPending,
 					"a resource with that domain already exists in Pangolin; delete it from Pangolin or change spec.fullDomain to resolve",
 					res.Generation)
 			}); patchErr != nil {
@@ -111,14 +111,14 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 		if pangolin.IsBadRequest(err) {
 			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 				s.Phase = pangolinv1alpha1.PublicResourcePhaseError
-				setCondition(s, metav1.ConditionFalse, reasonPermanentError, err.Error(), res.Generation)
+				setCondition(s, metav1.ConditionFalse, shared.ReasonPermanentError, err.Error(), res.Generation)
 			}); patchErr != nil {
 				logger.Error(patchErr, "failed to patch status")
 			}
 			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
 		if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-			setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+			setCondition(s, metav1.ConditionFalse, shared.ReasonError, err.Error(), res.Generation)
 		}); patchErr != nil {
 			logger.Error(patchErr, "failed to patch status")
 		}
@@ -151,7 +151,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 				return ctrl.Result{Requeue: true}, nil
 			}
 			if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
-				setCondition(s, metav1.ConditionFalse, reasonError, err.Error(), res.Generation)
+				setCondition(s, metav1.ConditionFalse, shared.ReasonError, err.Error(), res.Generation)
 			}); patchErr != nil {
 				logger.Error(patchErr, "failed to patch status")
 			}
@@ -162,7 +162,7 @@ func (r *Reconciler) reconcile(ctx context.Context, res *pangolinv1alpha1.Public
 	if err := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PublicResourceStatus) {
 		s.Phase = pangolinv1alpha1.PublicResourcePhaseReady
 		s.ObservedGeneration = res.Generation
-		setCondition(s, metav1.ConditionTrue, reasonReconciled, "resource reconciled successfully", res.Generation)
+		setCondition(s, metav1.ConditionTrue, shared.ReasonReconciled, "resource reconciled successfully", res.Generation)
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
