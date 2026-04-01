@@ -699,7 +699,7 @@ func TestResolveAllPorts(t *testing.T) {
 }
 
 func TestBuildAllPortSpecs_NoPorts(t *testing.T) {
-	if BuildAllPortSpecs(newService(nil), map[string]string{}, "pangolin-operator", testSiteRef, "host") != nil {
+	if BuildAllPortSpecs(newService(nil), map[string]string{}, defaultCfg(), testSiteRef, "host") != nil {
 		t.Error("expected nil for service with no ports")
 	}
 }
@@ -709,7 +709,7 @@ func TestBuildAllPortSpecs_MultiplePorts(t *testing.T) {
 		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
 		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
 	})
-	out := BuildAllPortSpecs(svc, map[string]string{}, "pangolin-operator", testSiteRef, "cluster.local")
+	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "cluster.local")
 	if len(out) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(out))
 	}
@@ -727,7 +727,7 @@ func TestBuildAllPortSpecs_UnnamedPort(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
 		{Port: 5432, Protocol: corev1.ProtocolTCP},
 	})
-	out := BuildAllPortSpecs(svc, map[string]string{}, "pangolin-operator", testSiteRef, "host")
+	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	key := ServiceResourceName(testNamespace, "my-svc", "5432", testProtocolTCP)
 	if spec, ok := out[key]; !ok || spec.Name != "my-svc-5432" {
 		t.Errorf("unexpected result for unnamed port: %+v", out)
@@ -738,7 +738,7 @@ func TestBuildAllPortSpecs_UDP(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
 		{Name: "dns", Port: 53, Protocol: corev1.ProtocolUDP},
 	})
-	out := BuildAllPortSpecs(svc, map[string]string{}, "pangolin-operator", testSiteRef, "host")
+	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	key := ServiceResourceName(testNamespace, "my-svc", "53", "udp")
 	if _, ok := out[key]; !ok {
 		t.Errorf("expected UDP key %q, got: %v", key, mapKeys(out))
@@ -747,7 +747,7 @@ func TestBuildAllPortSpecs_UDP(t *testing.T) {
 
 func TestBuildSinglePortSpec_NoMatchingPort(t *testing.T) {
 	svc := newService([]corev1.ServicePort{{Name: "grpc", Port: 9000}})
-	_, _, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "8080"}, "pangolin-operator", testSiteRef, "host", defaultCfg())
+	_, _, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "8080"}, defaultCfg(), testSiteRef, "host")
 	if ok {
 		t.Error("expected ok=false when no port matches annotation")
 	}
@@ -757,7 +757,7 @@ func TestBuildSinglePortSpec_SinglePort(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
 		{Name: "grpc", Port: 9000, Protocol: corev1.ProtocolTCP},
 	})
-	resName, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, "pangolin-operator", testSiteRef, "host", defaultCfg())
+	resName, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if !ok {
 		t.Fatal("expected ok=true for single-port service")
 	}
@@ -774,7 +774,7 @@ func TestBuildSinglePortSpec_SelectsHTTPPortByName(t *testing.T) {
 		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
 		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
 	})
-	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, "pangolin-operator", testSiteRef, "host", defaultCfg())
+	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if !ok || spec.ProxyPort != 80 {
 		t.Errorf("expected port 80 selected by name, got: ok=%v spec=%+v", ok, spec)
 	}
@@ -785,7 +785,7 @@ func TestBuildSinglePortSpec_SelectsByName(t *testing.T) {
 		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
 		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
 	})
-	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "metrics"}, "pangolin-operator", testSiteRef, "host", defaultCfg())
+	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "metrics"}, defaultCfg(), testSiteRef, "host")
 	if !ok || spec.ProxyPort != 9090 {
 		t.Errorf("expected port 9090 selected by name, got: ok=%v spec=%+v", ok, spec)
 	}
@@ -796,7 +796,7 @@ func TestBuildSinglePortSpec_SelectsByNumber(t *testing.T) {
 		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
 		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
 	})
-	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "9090"}, "pangolin-operator", testSiteRef, "host", defaultCfg())
+	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "9090"}, defaultCfg(), testSiteRef, "host")
 	if !ok || spec.ProxyPort != 9090 {
 		t.Errorf("expected port 9090 selected by number, got: ok=%v spec=%+v", ok, spec)
 	}
@@ -807,7 +807,7 @@ func TestBuildSinglePortSpec_FullDomain(t *testing.T) {
 		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
 	})
 	ann := map[string]string{"pangolin-operator/full-domain": testHostname}
-	resName, spec, ok := BuildSinglePortSpec(svc, ann, "pangolin-operator", testSiteRef, "cluster.local", defaultCfg())
+	resName, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
@@ -827,7 +827,7 @@ func TestBuildSinglePortSpec_FullDomain_MethodHTTPS(t *testing.T) {
 		"pangolin-operator/full-domain": testHostname,
 		"pangolin-operator/method":      methodHTTPS,
 	}
-	_, spec, ok := BuildSinglePortSpec(svc, ann, "pangolin-operator", testSiteRef, "cluster.local", defaultCfg())
+	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
 	if !ok || spec.Targets[0].Method != methodHTTPS {
 		t.Errorf("expected method=https, got: ok=%v method=%q", ok, spec.Targets[0].Method)
 	}
@@ -838,9 +838,98 @@ func TestBuildSinglePortSpec_AmbiguousMultiPort(t *testing.T) {
 		{Name: "grpc", Port: 9000},
 		{Name: "metrics", Port: 9090},
 	})
-	_, _, ok := BuildSinglePortSpec(svc, map[string]string{}, "pangolin-operator", testSiteRef, "host", defaultCfg())
+	_, _, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if ok {
 		t.Error("expected ok=false for ambiguous multi-port service with no selection annotation")
+	}
+}
+
+func TestBuildSinglePortSpec_EnabledAnnotation(t *testing.T) {
+	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{"pangolin-operator/enabled": "false"}
+	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "host")
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if spec.Enabled {
+		t.Error("expected Enabled=false")
+	}
+}
+
+func TestBuildSinglePortSpec_FullDomain_EnabledAnnotation(t *testing.T) {
+	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{
+		"pangolin-operator/full-domain": testHostname,
+		"pangolin-operator/enabled":     "false",
+	}
+	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if spec.Enabled {
+		t.Error("expected Enabled=false for full-domain service")
+	}
+}
+
+func TestBuildAllPortSpecs_EnabledAnnotation(t *testing.T) {
+	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{"pangolin-operator/enabled": "false"}
+	out := BuildAllPortSpecs(svc, ann, defaultCfg(), testSiteRef, "host")
+	key := ServiceResourceName(testNamespace, "my-svc", "80", testProtocolTCP)
+	spec, ok := out[key]
+	if !ok {
+		t.Fatalf("missing key %q", key)
+	}
+	if spec.Enabled {
+		t.Error("expected Enabled=false")
+	}
+}
+
+func TestBuildSinglePortSpec_DefaultEnabledFalse(t *testing.T) {
+	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if spec.Enabled {
+		t.Error("service autodiscovery should default Enabled=false")
+	}
+}
+
+func TestBuildSinglePortSpec_FullDomain_DefaultEnabledFalse(t *testing.T) {
+	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{"pangolin-operator/full-domain": testHostname}
+	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if spec.Enabled {
+		t.Error("service autodiscovery should default Enabled=false")
+	}
+}
+
+func TestBuildSinglePortSpec_EnabledAnnotationTrue(t *testing.T) {
+	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{"pangolin-operator/enabled": "true"}
+	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "host")
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if !spec.Enabled {
+		t.Error("expected Enabled=true when annotation is set")
+	}
+}
+
+func TestBuildAllPortSpecs_DefaultEnabledFalse(t *testing.T) {
+	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
+	key := ServiceResourceName(testNamespace, "my-svc", "80", testProtocolTCP)
+	spec, ok := out[key]
+	if !ok {
+		t.Fatalf("missing key %q", key)
+	}
+	if spec.Enabled {
+		t.Error("service autodiscovery should default Enabled=false")
 	}
 }
 

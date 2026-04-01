@@ -58,6 +58,161 @@ func splitCSV(s string) []string {
 	return out
 }
 
+// annotationResolver centralizes annotation reading for autodiscovery.
+// All Build*Spec functions use this to resolve annotations consistently,
+// so common fields like Enabled cannot be accidentally omitted.
+type annotationResolver struct {
+	annotations map[string]string
+	prefix      string
+	cfg         *pangolinv1alpha1.AutoDiscoverSpec
+}
+
+func newResolver(annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec) annotationResolver {
+	return annotationResolver{
+		annotations: annotations,
+		prefix:      annotationPrefix(cfg),
+		cfg:         cfg,
+	}
+}
+
+func (r annotationResolver) get(key string) string {
+	return r.annotations[r.prefix+"/"+key]
+}
+
+func (r annotationResolver) lookup(key string) (string, bool) {
+	v, ok := r.annotations[r.prefix+"/"+key]
+	return v, ok
+}
+
+func (r annotationResolver) enabled() bool {
+	return r.enabledOr(true)
+}
+
+func (r annotationResolver) enabledOr(def bool) bool {
+	if v, ok := r.lookup("enabled"); ok {
+		return isTruthy(v)
+	}
+	return def
+}
+
+func (r annotationResolver) name(defaultName string) string {
+	if v, ok := r.lookup("name"); ok && v != "" {
+		return v
+	}
+	return defaultName
+}
+
+func (r annotationResolver) siteRef(fallback string) (string, bool) {
+	if v, ok := r.lookup("site-ref"); ok && v != "" {
+		return v, true
+	}
+	if fallback != "" {
+		return fallback, true
+	}
+	return "", false
+}
+
+func (r annotationResolver) ssl() bool {
+	if v, ok := r.lookup("ssl"); ok {
+		return isTruthy(v)
+	}
+	return r.cfg.SSL
+}
+
+func (r annotationResolver) method(defaultMethod string) string {
+	if v, ok := r.lookup("method"); ok {
+		v = strings.ToLower(strings.TrimSpace(v))
+		switch v {
+		case methodHTTP, methodHTTPS, methodH2C:
+			return v
+		}
+	}
+	return defaultMethod
+}
+
+func (r annotationResolver) tlsServerName(defaultName string) string {
+	if v := strings.TrimSpace(r.get("tls-server-name")); v != "" {
+		return v
+	}
+	return defaultName
+}
+
+func (r annotationResolver) proxyPort(defaultPort int) int {
+	if v, ok := r.lookup("proxy-port"); ok {
+		if p, err := strconv.Atoi(v); err == nil && p >= 1 && p <= 65535 {
+			return p
+		}
+	}
+	return defaultPort
+}
+
+func (r annotationResolver) protocol(defaultProto string) string {
+	if v, ok := r.lookup("protocol"); ok {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "tcp" || v == "udp" {
+			return v
+		}
+	}
+	return defaultProto
+}
+
+func (r annotationResolver) headers() []pangolinv1alpha1.PublicHeaderSpec {
+	return buildHeaders(r.annotations, r.prefix)
+}
+
+func (r annotationResolver) auth() *pangolinv1alpha1.PublicAuthSpec {
+	return buildAuth(r.annotations, r.cfg)
+}
+
+func (r annotationResolver) maintenance() *pangolinv1alpha1.PublicMaintenanceSpec {
+	return buildMaintenance(r.annotations, r.prefix)
+}
+
+func (r annotationResolver) rules() []pangolinv1alpha1.PublicRuleSpec {
+	return buildRules(r.annotations, r.prefix, r.cfg)
+}
+
+func (r annotationResolver) targetExtras(base pangolinv1alpha1.PublicTargetSpec) pangolinv1alpha1.PublicTargetSpec {
+	return buildTargetExtras(base, r.annotations, r.prefix)
+}
+
+// buildHTTPSpec builds a PublicResourceSpec for an HTTP protocol resource.
+// Shared by HTTPRoute and Service (with full-domain) discovery.
+// The enabled parameter controls the default: route discovery passes r.enabled()
+// (default true), service discovery passes r.enabledOr(false).
+func (r annotationResolver) buildHTTPSpec(siteRef, name, hostname string, enabled bool, target pangolinv1alpha1.PublicTargetSpec) pangolinv1alpha1.PublicResourceSpec {
+	return pangolinv1alpha1.PublicResourceSpec{
+		SiteRef:       siteRef,
+		Name:          name,
+		Protocol:      methodHTTP,
+		FullDomain:    hostname,
+		Ssl:           r.ssl(),
+		Enabled:       enabled,
+		HostHeader:    r.get("host-header"),
+		TlsServerName: r.tlsServerName(hostname),
+		Headers:       r.headers(),
+		Auth:          r.auth(),
+		Maintenance:   r.maintenance(),
+		Rules:         r.rules(),
+		Targets:       []pangolinv1alpha1.PublicTargetSpec{target},
+	}
+}
+
+// buildTCPSpec builds a PublicResourceSpec for a TCP/UDP protocol resource.
+// Shared by TCPRoute, Service (single-port), and Service (all-ports) discovery.
+// The enabled parameter controls the default: route discovery passes r.enabled()
+// (default true), service discovery passes r.enabledOr(false).
+func (r annotationResolver) buildTCPSpec(siteRef, name, protocol string, proxyPort int, enabled bool, target pangolinv1alpha1.PublicTargetSpec) pangolinv1alpha1.PublicResourceSpec {
+	return pangolinv1alpha1.PublicResourceSpec{
+		SiteRef:   siteRef,
+		Name:      name,
+		Protocol:  protocol,
+		ProxyPort: proxyPort,
+		Enabled:   enabled,
+		Targets:   []pangolinv1alpha1.PublicTargetSpec{target},
+	}
+}
+
 // buildHeaders parses {prefix}/headers as a JSON array of {name,value} objects.
 func buildHeaders(annotations map[string]string, prefix string) []pangolinv1alpha1.PublicHeaderSpec {
 	raw, ok := annotations[prefix+"/headers"]
@@ -212,6 +367,20 @@ func buildTargetExtras(base pangolinv1alpha1.PublicTargetSpec, annotations map[s
 	return t
 }
 
+// resolveBackendRef extracts a target hostname and port from a Gateway API BackendObjectReference.
+func resolveBackendRef(ref gatewayv1.BackendObjectReference, routeNamespace string, defaultPort int) (hostname string, port int) {
+	refNamespace := routeNamespace
+	if ref.Namespace != nil && *ref.Namespace != "" {
+		refNamespace = string(*ref.Namespace)
+	}
+	hostname = fmt.Sprintf("%s.%s.svc.cluster.local", ref.Name, refNamespace)
+	port = defaultPort
+	if ref.Port != nil {
+		port = int(*ref.Port)
+	}
+	return
+}
+
 func RouteReferencesGateway(route *gatewayv1.HTTPRoute, gatewayName, gatewayNamespace string) bool {
 	for _, parent := range route.Spec.ParentRefs {
 		if parent.Name != gatewayv1.ObjectName(gatewayName) {
@@ -248,14 +417,11 @@ func ServiceResourceName(namespace, name, port, proto string) string {
 // When cfg.GatewayName is empty (annotation-based discovery), the target is derived from
 // the HTTPRoute's first backendRef as before.
 func BuildHTTPRouteSpec(route *gatewayv1.HTTPRoute, hostname string, annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec, siteRefFallback string) (pangolinv1alpha1.PublicResourceSpec, error) {
-	prefix := annotationPrefix(cfg)
+	r := newResolver(annotations, cfg)
 
-	siteRef, ok := annotations[prefix+"/site-ref"]
-	if !ok || siteRef == "" {
-		if siteRefFallback == "" {
-			return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("annotation %s/site-ref is required on HTTPRoute %s/%s", prefix, route.Namespace, route.Name)
-		}
-		siteRef = siteRefFallback
+	siteRef, ok := r.siteRef(siteRefFallback)
+	if !ok {
+		return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("annotation %s/site-ref is required on HTTPRoute %s/%s", r.prefix, route.Namespace, route.Name)
 	}
 
 	var targetHostname string
@@ -286,66 +452,18 @@ func BuildHTTPRouteSpec(route *gatewayv1.HTTPRoute, hostname string, annotations
 		if len(route.Spec.Rules) == 0 || len(route.Spec.Rules[0].BackendRefs) == 0 {
 			return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("HTTPRoute %s/%s has no backendRefs", route.Namespace, route.Name)
 		}
-		ref := route.Spec.Rules[0].BackendRefs[0]
-		refNamespace := route.Namespace
-		if ref.Namespace != nil && *ref.Namespace != "" {
-			refNamespace = string(*ref.Namespace)
-		}
-		targetHostname = fmt.Sprintf("%s.%s.svc.cluster.local", ref.Name, refNamespace)
-		targetPort = 80
-		if ref.Port != nil {
-			targetPort = int(*ref.Port)
-		}
+		ref := route.Spec.Rules[0].BackendRefs[0].BackendObjectReference
+		targetHostname, targetPort = resolveBackendRef(ref, route.Namespace, 80)
 		targetMethod = methodHTTP
 	}
 
-	// Per-annotation overrides for method (applies in both modes).
-	if v, ok := annotations[prefix+"/method"]; ok && (v == methodHTTP || v == methodHTTPS || v == methodH2C) {
-		targetMethod = v
-	}
-
-	ssl := cfg.SSL
-	if v, ok := annotations[prefix+"/ssl"]; ok {
-		ssl = isTruthy(v)
-	}
-
-	displayName := route.Name
-	if v, ok := annotations[prefix+"/name"]; ok && v != "" {
-		displayName = v
-	}
-
-	tlsServerName := hostname
-	if v := strings.TrimSpace(annotations[prefix+"/tls-server-name"]); v != "" {
-		tlsServerName = v
-	}
-
-	target := buildTargetExtras(pangolinv1alpha1.PublicTargetSpec{
+	target := r.targetExtras(pangolinv1alpha1.PublicTargetSpec{
 		Hostname: targetHostname,
 		Port:     targetPort,
-		Method:   targetMethod,
-	}, annotations, prefix)
+		Method:   r.method(targetMethod),
+	})
 
-	enabled := true
-	if v, ok := annotations[prefix+"/enabled"]; ok {
-		enabled = isTruthy(v)
-	}
-
-	spec := pangolinv1alpha1.PublicResourceSpec{
-		SiteRef:       siteRef,
-		Name:          displayName,
-		Protocol:      methodHTTP,
-		FullDomain:    hostname,
-		Ssl:           ssl,
-		Enabled:       enabled,
-		HostHeader:    annotations[prefix+"/host-header"],
-		TlsServerName: tlsServerName,
-		Headers:       buildHeaders(annotations, prefix),
-		Auth:          buildAuth(annotations, cfg),
-		Maintenance:   buildMaintenance(annotations, prefix),
-		Rules:         buildRules(annotations, prefix, cfg),
-		Targets:       []pangolinv1alpha1.PublicTargetSpec{target},
-	}
-	return spec, nil
+	return r.buildHTTPSpec(siteRef, r.name(route.Name), hostname, r.enabled(), target), nil
 }
 
 func ResolveAllPorts(annotations map[string]string, prefix string, cfg *pangolinv1alpha1.AutoDiscoverSpec) bool {
@@ -355,10 +473,12 @@ func ResolveAllPorts(annotations map[string]string, prefix string, cfg *pangolin
 	return cfg.AllPorts
 }
 
-func BuildAllPortSpecs(svc *corev1.Service, annotations map[string]string, prefix, siteRef, clusterHostname string) map[string]pangolinv1alpha1.PublicResourceSpec {
+func BuildAllPortSpecs(svc *corev1.Service, annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec, siteRef, clusterHostname string) map[string]pangolinv1alpha1.PublicResourceSpec {
 	if len(svc.Spec.Ports) == 0 {
 		return nil
 	}
+	r := newResolver(annotations, cfg)
+
 	out := make(map[string]pangolinv1alpha1.PublicResourceSpec, len(svc.Spec.Ports))
 	for _, p := range svc.Spec.Ports {
 		portName := p.Name
@@ -366,26 +486,20 @@ func BuildAllPortSpecs(svc *corev1.Service, annotations map[string]string, prefi
 			portName = strconv.Itoa(int(p.Port))
 		}
 		proto := serviceProtocol(p.Protocol)
+		target := pangolinv1alpha1.PublicTargetSpec{Hostname: clusterHostname, Port: int(p.Port)}
 		key := ServiceResourceName(svc.Namespace, svc.Name, strconv.Itoa(int(p.Port)), proto)
-		out[key] = pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:   siteRef,
-			Name:      fmt.Sprintf("%s-%s", svc.Name, portName),
-			Protocol:  proto,
-			ProxyPort: int(p.Port),
-			Targets: []pangolinv1alpha1.PublicTargetSpec{
-				{Hostname: clusterHostname, Port: int(p.Port)},
-			},
-		}
+		out[key] = r.buildTCPSpec(siteRef, fmt.Sprintf("%s-%s", svc.Name, portName), proto, int(p.Port), r.enabledOr(false), target)
 	}
 	return out
 }
 
 // BuildSinglePortSpec returns a PublicResourceSpec for the selected port of a Service.
 // ok is false when no suitable port can be determined.
-func BuildSinglePortSpec(svc *corev1.Service, annotations map[string]string, prefix, siteRef, clusterHostname string, cfg *pangolinv1alpha1.AutoDiscoverSpec) (string, pangolinv1alpha1.PublicResourceSpec, bool) {
-	fullDomain := strings.TrimSpace(annotations[prefix+"/full-domain"])
+func BuildSinglePortSpec(svc *corev1.Service, annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec, siteRef, clusterHostname string) (string, pangolinv1alpha1.PublicResourceSpec, bool) {
+	r := newResolver(annotations, cfg)
+	fullDomain := strings.TrimSpace(r.get("full-domain"))
 
-	selected, ok := selectPort(svc, annotations, prefix)
+	selected, ok := selectPort(svc, annotations, r.prefix)
 	if !ok {
 		return "", pangolinv1alpha1.PublicResourceSpec{}, false
 	}
@@ -394,32 +508,14 @@ func BuildSinglePortSpec(svc *corev1.Service, annotations map[string]string, pre
 	if portName == "" {
 		portName = strconv.Itoa(int(selected.Port))
 	}
-	displayName := fmt.Sprintf("%s-%s", svc.Name, portName)
-	if v, ok := annotations[prefix+"/name"]; ok && v != "" {
-		displayName = v
-	}
+	displayName := r.name(fmt.Sprintf("%s-%s", svc.Name, portName))
 
 	if fullDomain != "" {
-		method := methodHTTP
-		if v, ok := annotations[prefix+"/method"]; ok {
-			v = strings.ToLower(strings.TrimSpace(v))
-			if v == methodHTTPS || v == methodH2C {
-				method = v
-			}
-		}
-		ssl := cfg.SSL
-		if v, ok := annotations[prefix+"/ssl"]; ok {
-			ssl = isTruthy(v)
-		}
-		tlsServerName := strings.TrimSpace(annotations[prefix+"/tls-server-name"])
-		if tlsServerName == "" {
-			tlsServerName = fullDomain
-		}
-		extras := buildTargetExtras(pangolinv1alpha1.PublicTargetSpec{}, annotations, prefix)
+		extras := r.targetExtras(pangolinv1alpha1.PublicTargetSpec{})
 		target := pangolinv1alpha1.PublicTargetSpec{
 			Hostname:        clusterHostname,
 			Port:            int(selected.Port),
-			Method:          method,
+			Method:          r.method(methodHTTP),
 			Enabled:         extras.Enabled,
 			Path:            extras.Path,
 			PathMatchType:   extras.PathMatchType,
@@ -428,39 +524,13 @@ func BuildSinglePortSpec(svc *corev1.Service, annotations map[string]string, pre
 			Priority:        extras.Priority,
 		}
 		resName := HostnameToResourceName(svc.Name, fullDomain)
-		return resName, pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:       siteRef,
-			Name:          displayName,
-			Protocol:      methodHTTP,
-			FullDomain:    fullDomain,
-			Ssl:           ssl,
-			HostHeader:    annotations[prefix+"/host-header"],
-			TlsServerName: tlsServerName,
-			Headers:       buildHeaders(annotations, prefix),
-			Auth:          buildAuth(annotations, cfg),
-			Maintenance:   buildMaintenance(annotations, prefix),
-			Rules:         buildRules(annotations, prefix, cfg),
-			Targets:       []pangolinv1alpha1.PublicTargetSpec{target},
-		}, true
+		return resName, r.buildHTTPSpec(siteRef, displayName, fullDomain, r.enabledOr(false), target), true
 	}
 
-	proto := serviceProtocol(selected.Protocol)
-	if v, ok := annotations[prefix+"/protocol"]; ok {
-		v = strings.ToLower(strings.TrimSpace(v))
-		if v == "tcp" || v == "udp" {
-			proto = v
-		}
-	}
+	proto := r.protocol(serviceProtocol(selected.Protocol))
+	target := pangolinv1alpha1.PublicTargetSpec{Hostname: clusterHostname, Port: int(selected.Port)}
 	resName := ServiceResourceName(svc.Namespace, svc.Name, strconv.Itoa(int(selected.Port)), proto)
-	return resName, pangolinv1alpha1.PublicResourceSpec{
-		SiteRef:   siteRef,
-		Name:      displayName,
-		Protocol:  proto,
-		ProxyPort: int(selected.Port),
-		Targets: []pangolinv1alpha1.PublicTargetSpec{
-			{Hostname: clusterHostname, Port: int(selected.Port)},
-		},
-	}, true
+	return resName, r.buildTCPSpec(siteRef, displayName, proto, int(selected.Port), r.enabledOr(false), target), true
 }
 
 func selectPort(svc *corev1.Service, annotations map[string]string, prefix string) (*corev1.ServicePort, bool) {
@@ -506,59 +576,22 @@ func TCPRouteReferencesGateway(route *gatewayv1alpha2.TCPRoute, gatewayName, gat
 }
 
 func BuildTCPRouteSpec(route *gatewayv1alpha2.TCPRoute, annotations map[string]string, cfg *pangolinv1alpha1.AutoDiscoverSpec, siteRefFallback string) (pangolinv1alpha1.PublicResourceSpec, error) {
-	prefix := annotationPrefix(cfg)
+	r := newResolver(annotations, cfg)
 
-	siteRef, ok := annotations[prefix+"/site-ref"]
-	if !ok || siteRef == "" {
-		if siteRefFallback == "" {
-			return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("annotation %s/site-ref is required on TCPRoute %s/%s", prefix, route.Namespace, route.Name)
-		}
-		siteRef = siteRefFallback
+	siteRef, ok := r.siteRef(siteRefFallback)
+	if !ok {
+		return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("annotation %s/site-ref is required on TCPRoute %s/%s", r.prefix, route.Namespace, route.Name)
 	}
 
 	if len(route.Spec.Rules) == 0 || len(route.Spec.Rules[0].BackendRefs) == 0 {
 		return pangolinv1alpha1.PublicResourceSpec{}, fmt.Errorf("TCPRoute %s/%s has no backendRefs", route.Namespace, route.Name)
 	}
 
-	ref := route.Spec.Rules[0].BackendRefs[0]
-	refNamespace := route.Namespace
-	if ref.Namespace != nil && *ref.Namespace != "" {
-		refNamespace = string(*ref.Namespace)
-	}
-	targetHostname := fmt.Sprintf("%s.%s.svc.cluster.local", ref.Name, refNamespace)
-	targetPort := 0
-	if ref.Port != nil {
-		targetPort = int(*ref.Port)
-	}
+	ref := route.Spec.Rules[0].BackendRefs[0].BackendObjectReference
+	targetHostname, targetPort := resolveBackendRef(ref, route.Namespace, 0)
+	target := pangolinv1alpha1.PublicTargetSpec{Hostname: targetHostname, Port: targetPort}
 
-	proxyPort := targetPort
-	if v, ok := annotations[prefix+"/proxy-port"]; ok {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 1 && parsed <= 65535 {
-			proxyPort = parsed
-		}
-	}
-
-	displayName := route.Name
-	if v, ok := annotations[prefix+"/name"]; ok && v != "" {
-		displayName = v
-	}
-
-	enabled := true
-	if v, ok := annotations[prefix+"/enabled"]; ok {
-		enabled = isTruthy(v)
-	}
-
-	spec := pangolinv1alpha1.PublicResourceSpec{
-		SiteRef:   siteRef,
-		Name:      displayName,
-		Protocol:  "tcp",
-		ProxyPort: proxyPort,
-		Enabled:   enabled,
-		Targets: []pangolinv1alpha1.PublicTargetSpec{
-			{Hostname: targetHostname, Port: targetPort},
-		},
-	}
-	return spec, nil
+	return r.buildTCPSpec(siteRef, r.name(route.Name), "tcp", r.proxyPort(targetPort), r.enabled(), target), nil
 }
 
 func EnsureTCPRouteResource(ctx context.Context, c client.Client, owner metav1.Object, routeName, namespace, resName string, spec pangolinv1alpha1.PublicResourceSpec) error {
