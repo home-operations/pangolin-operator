@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2](https://github.com/home-operations/pangolin-operator/compare/0.1.1...0.1.2) (2026-04-15)
+
+
+### Features
+
+* allow non managed deployment of newt ([1d185b1](https://github.com/home-operations/pangolin-operator/commit/1d185b10251b6212a8b8e6c521b0052235dfadc9))
+
+
+### Miscellaneous Chores
+
+* refactor renovate workflow to use GitHub CLI ([7924304](https://github.com/home-operations/pangolin-operator/commit/7924304eb6378a3c4b5fc2aee0a30800af07f747))
+
 ## [0.1.1](https://github.com/home-operations/pangolin-operator/compare/0.1.0...0.1.1) (2026-04-01)
 
 
