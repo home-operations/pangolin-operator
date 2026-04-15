@@ -143,7 +143,7 @@ func (r *Reconciler) reconcile(ctx context.Context, site *pangolinv1alpha1.NewtS
 	}
 
 	online := false
-	if site.Spec.Type != shared.SiteTypeLocal {
+	if site.Spec.Type != shared.SiteTypeLocal && isManagedDeployment(site) {
 		if err := r.ensureServiceAccount(ctx, site); err != nil {
 			if patchErr := r.patchStatus(ctx, site, func(s *pangolinv1alpha1.NewtSiteStatus) {
 				shared.SetCondition(&s.Conditions, metav1.ConditionFalse, shared.ReasonError, err.Error(), site.Generation)
@@ -838,4 +838,9 @@ func hasTCPRouteParentRef(obj client.Object) bool {
 		return false
 	}
 	return len(route.Spec.ParentRefs) > 0
+}
+
+// isManagedDeployment returns true when ManagedDeployment is nil (default) or explicitly true.
+func isManagedDeployment(site *pangolinv1alpha1.NewtSite) bool {
+	return site.Spec.ManagedDeployment == nil || *site.Spec.ManagedDeployment
 }

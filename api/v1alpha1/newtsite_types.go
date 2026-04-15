@@ -25,6 +25,13 @@ type NewtSiteSpec struct {
 	// +optional
 	Newt NewtSpec `json:"newt,omitempty"`
 
+	// ManagedDeployment controls whether the operator creates the newt Deployment and
+	// ServiceAccount. When false, the Pangolin site and credentials Secret are still created
+	// but the Deployment is not. Only meaningful when type is "newt". Defaults to true.
+	// +kubebuilder:default=true
+	// +optional
+	ManagedDeployment *bool `json:"managedDeployment,omitempty"`
+
 	// AutoDiscover enables operator-native HTTPRoute/Service discovery for this site.
 	// When set, the operator watches HTTPRoutes and Services annotated with
 	// <prefix>/site-ref: <newtsiteName> and creates PublicResource CRs owned by this NewtSite.

@@ -119,6 +119,11 @@ func (in *NewtSiteList) DeepCopyObject() runtime.Object {
 func (in *NewtSiteSpec) DeepCopyInto(out *NewtSiteSpec) {
 	*out = *in
 	in.Newt.DeepCopyInto(&out.Newt)
+	if in.ManagedDeployment != nil {
+		in, out := &in.ManagedDeployment, &out.ManagedDeployment
+		*out = new(bool)
+		**out = **in
+	}
 	if in.AutoDiscover != nil {
 		in, out := &in.AutoDiscover, &out.AutoDiscover
 		*out = new(AutoDiscoverSpec)
