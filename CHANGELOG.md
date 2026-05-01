@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.3](https://github.com/home-operations/pangolin-operator/compare/0.1.2...0.1.3) (2026-05-01)
+
+
+### Features
+
+* **deps:** update module sigs.k8s.io/controller-runtime (v0.23.3 → v0.24.0) ([#28](https://github.com/home-operations/pangolin-operator/issues/28)) ([d5e6509](https://github.com/home-operations/pangolin-operator/commit/d5e650948ed6346593c9dba47fda39b9e54742fd))
+* support 1.18+ ([d2866fb](https://github.com/home-operations/pangolin-operator/commit/d2866fb1e0067e2dfae7e3da1dc5a1a7610b1bf9))
+
+
+### Bug Fixes
+
+* **container:** update image alpine/helm (4.1.3 → 4.1.4) ([#19](https://github.com/home-operations/pangolin-operator/issues/19)) ([52d61eb](https://github.com/home-operations/pangolin-operator/commit/52d61eb8cab0b198c2b84562a15509285bd60c35))
+* **deps:** update kubernetes monorepo (v0.35.3 → v0.35.4) ([#21](https://github.com/home-operations/pangolin-operator/issues/21)) ([6d28a08](https://github.com/home-operations/pangolin-operator/commit/6d28a088fc0caf637103af7dfa895d33d4eb9aca))
+
+
+### Miscellaneous Chores
+
+* remove deprecated usage ([3739ed5](https://github.com/home-operations/pangolin-operator/commit/3739ed5ed5771a26e71b0813ead4c4fa54d38f16))
+
 ## [0.1.2](https://github.com/home-operations/pangolin-operator/compare/0.1.1...0.1.2) (2026-04-15)
 
 
