@@ -14,3 +14,20 @@ spec:
     - hostname: myapp.default.svc.cluster.local
       port: 8080
       method: http
+---
+apiVersion: pangolin.home-operations.com/v1alpha1
+kind: PublicResource
+metadata:
+  name: publicresource-wildcard-sample
+  namespace: default
+spec:
+  siteRef: newtsite-sample
+  name: sample-wildcard
+  protocol: http
+  fullDomain: "*.apps.example.com"
+  ssl: true
+  hostHeader: ""    # leave unset to preserve the original Host header
+  targets:
+    - hostname: ingress.default.svc.cluster.local
+      port: 80
+      method: http

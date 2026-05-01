@@ -16,27 +16,47 @@ type PrivateResourceSpec struct {
 	// +kubebuilder:validation:MaxLength=255
 	Name string `json:"name"`
 
-	// Mode controls whether this resource tunnels to a single host, a CIDR range.
+	// Mode is "host" (single IP/hostname), "cidr" (range), or "http"
+	// (private HTTP resource reachable only via the Pangolin client).
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=host;cidr
+	// +kubebuilder:validation:Enum=host;cidr;http
 	Mode string `json:"mode"`
 
-	// Destination is the IP address, hostname, or CIDR range to tunnel to.
-	// In cidr mode this must be a valid CIDR (e.g. 10.42.0.0/16).
-	// In host mode this can be an IP address or a hostname (alias required for hostnames).
+	// Destination is the IP, hostname, or CIDR to tunnel to. In http mode
+	// this is the backend; pair with destinationPort.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Destination string `json:"destination"`
 
-	// TcpPorts is the set of TCP ports to expose. Defaults to "*" (all ports).
+	// TcpPorts is the set of TCP ports to expose ("*" for all). Ignored when mode=http.
 	// +kubebuilder:default="*"
 	// +optional
 	TcpPorts string `json:"tcpPorts,omitempty"`
 
-	// UdpPorts is the set of UDP ports to expose. Defaults to "*" (all ports).
+	// UdpPorts is the set of UDP ports to expose ("*" for all). Ignored when mode=http.
 	// +kubebuilder:default="*"
 	// +optional
 	UdpPorts string `json:"udpPorts,omitempty"`
+
+	// FullDomain is the Pangolin-managed domain to expose (required when mode=http).
+	// +optional
+	FullDomain string `json:"fullDomain,omitempty"`
+
+	// DestinationPort is the backend port (required when mode=http).
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	DestinationPort int `json:"destinationPort,omitempty"`
+
+	// Scheme is the backend protocol when mode=http.
+	// +kubebuilder:validation:Enum=http;https
+	// +kubebuilder:default=http
+	// +optional
+	Scheme string `json:"scheme,omitempty"`
+
+	// Ssl enables a Pangolin TLS certificate on FullDomain when mode=http (default true).
+	// +optional
+	Ssl *bool `json:"ssl,omitempty"`
 
 	// DisableIcmp disables ICMP (ping) tunnelling for this resource.
 	// +kubebuilder:default=false
@@ -75,6 +95,10 @@ type PrivateResourceStatus struct {
 	// +optional
 	NiceID string `json:"niceId,omitempty"`
 
+	// FullDomain is the public domain assigned to this resource (mode=http).
+	// +optional
+	FullDomain string `json:"fullDomain,omitempty"`
+
 	// ObservedGeneration reflects the last observed spec generation.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
@@ -101,6 +125,7 @@ const (
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Mode",type="string",JSONPath=".spec.mode"
 // +kubebuilder:printcolumn:name="Destination",type="string",JSONPath=".spec.destination"
+// +kubebuilder:printcolumn:name="Domain",type="string",JSONPath=".status.fullDomain"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // PrivateResource is the Schema for Pangolin private resources.

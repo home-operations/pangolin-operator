@@ -11,3 +11,18 @@ spec:
   destination: 192.168.1.100
   tcpPorts: "*"
   udpPorts: "*"
+---
+apiVersion: pangolin.home-operations.com/v1alpha1
+kind: PrivateResource
+metadata:
+  name: privateresource-http-sample
+  namespace: default
+spec:
+  siteRef: newtsite-sample
+  name: sample-private-http
+  mode: http
+  fullDomain: internal.example.com
+  destination: my-app.default.svc.cluster.local
+  destinationPort: 8080
+  scheme: http
+  ssl: true

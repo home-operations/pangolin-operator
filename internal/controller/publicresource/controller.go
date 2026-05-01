@@ -285,21 +285,12 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 			if err != nil {
 				return fmt.Errorf("ListDomains: %w", err)
 			}
-			domainID, ok := pangolin.ResolveDomainID(domains, res.Spec.FullDomain)
+			domainID, subdomain, ok := pangolin.ResolveDomain(domains, res.Spec.FullDomain)
 			if !ok {
 				return fmt.Errorf("no Pangolin domain matches %q", res.Spec.FullDomain)
 			}
 			createReq.DomainId = domainID
-			for _, d := range domains {
-				if d.DomainID == domainID {
-					sub := strings.TrimSuffix(res.Spec.FullDomain, "."+d.BaseDomain)
-					sub = strings.TrimSuffix(sub, d.BaseDomain)
-					if sub != res.Spec.FullDomain {
-						createReq.Subdomain = sub
-					}
-					break
-				}
-			}
+			createReq.Subdomain = subdomain
 		}
 	}
 

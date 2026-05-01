@@ -789,3 +789,78 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 		t.Errorf("expected ResourceID=50 after re-creation, got %d", recreated.Status.ResourceID)
 	}
 }
+
+// TestLifecycle_WildcardSubdomain verifies that fullDomain="*.example.com" is
+// sent to Pangolin as subdomain="*" against the matching domainId.
+func TestLifecycle_WildcardSubdomain(t *testing.T) {
+	var receivedReq pangolin.CreateResourceRequest
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+	})
+	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, _ *http.Request) {
+		testutil.PangolinResponse(t, w, map[string]any{
+			"domains": []map[string]any{
+				{"domainId": "dom-1", "baseDomain": "example.com"},
+				{"domainId": "dom-2", "baseDomain": "apps.example.com"},
+			},
+		})
+	})
+	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedReq)
+		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{
+			ResourceID: 21, NiceID: "r-21", FullDomain: "*.apps.example.com",
+		})
+	})
+	mux.HandleFunc("/v1/resource/21", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			testutil.PangolinResponse(t, w, pangolin.ResourceItem{ResourceID: 21, Name: "wild"})
+		case http.MethodPost:
+			testutil.PangolinResponse(t, w, nil)
+		}
+	})
+	mux.HandleFunc("/v1/resource/21/target", func(w http.ResponseWriter, _ *http.Request) {
+		testutil.PangolinResponse(t, w, pangolin.CreateTargetResponse{TargetID: 1})
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := &pangolinv1alpha1.PublicResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "wild",
+			Namespace:  "default",
+			Finalizers: []string{PublicResourceFinalizer},
+		},
+		Spec: pangolinv1alpha1.PublicResourceSpec{
+			SiteRef:    "my-site",
+			Name:       "wild",
+			Protocol:   "http",
+			FullDomain: "*.apps.example.com",
+			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80, Method: "http"}},
+		},
+	}
+
+	scheme := testutil.NewScheme()
+	cl := testutil.NewClientBuilder(scheme).
+		WithObjects(res, testutil.ReadySite()).
+		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
+		Build()
+
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
+	nn := types.NamespacedName{Name: "wild", Namespace: "default"}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	if receivedReq.DomainId != "dom-2" {
+		t.Errorf("expected domainId=dom-2 (longest match), got %q", receivedReq.DomainId)
+	}
+	if receivedReq.Subdomain != "*" {
+		t.Errorf("expected subdomain=*, got %q", receivedReq.Subdomain)
+	}
+}

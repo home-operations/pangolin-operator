@@ -26,6 +26,9 @@ spec:
     - jsonPath: .spec.destination
       name: Destination
       type: string
+    - jsonPath: .status.fullDomain
+      name: Domain
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -70,22 +73,32 @@ spec:
                 type: array
               destination:
                 description: |-
-                  Destination is the IP address, hostname, or CIDR range to tunnel to.
-                  In cidr mode this must be a valid CIDR (e.g. 10.42.0.0/16).
-                  In host mode this can be an IP address or a hostname (alias required for hostnames).
+                  Destination is the IP, hostname, or CIDR to tunnel to. In http mode
+                  this is the backend; pair with destinationPort.
                 minLength: 1
                 type: string
+              destinationPort:
+                description: DestinationPort is the backend port (required when mode=http).
+                maximum: 65535
+                minimum: 1
+                type: integer
               disableIcmp:
                 default: false
                 description: DisableIcmp disables ICMP (ping) tunnelling for this
                   resource.
                 type: boolean
+              fullDomain:
+                description: FullDomain is the Pangolin-managed domain to expose (required
+                  when mode=http).
+                type: string
               mode:
-                description: Mode controls whether this resource tunnels to a single
-                  host, a CIDR range.
+                description: |-
+                  Mode is "host" (single IP/hostname), "cidr" (range), or "http"
+                  (private HTTP resource reachable only via the Pangolin client).
                 enum:
                 - host
                 - cidr
+                - http
                 type: string
               name:
                 description: Name is the display name in Pangolin.
@@ -98,18 +111,29 @@ spec:
                 items:
                   type: integer
                 type: array
+              scheme:
+                default: http
+                description: Scheme is the backend protocol when mode=http.
+                enum:
+                - http
+                - https
+                type: string
               siteRef:
                 description: SiteRef is the name of the NewtSite that owns this resource.
                 type: string
+              ssl:
+                description: Ssl enables a Pangolin TLS certificate on FullDomain
+                  when mode=http (default true).
+                type: boolean
               tcpPorts:
                 default: '*'
-                description: TcpPorts is the set of TCP ports to expose. Defaults
-                  to "*" (all ports).
+                description: TcpPorts is the set of TCP ports to expose ("*" for all).
+                  Ignored when mode=http.
                 type: string
               udpPorts:
                 default: '*'
-                description: UdpPorts is the set of UDP ports to expose. Defaults
-                  to "*" (all ports).
+                description: UdpPorts is the set of UDP ports to expose ("*" for all).
+                  Ignored when mode=http.
                 type: string
               userIds:
                 description: UserIds restricts access to these Pangolin user IDs.
@@ -182,6 +206,10 @@ spec:
                   - type
                   type: object
                 type: array
+              fullDomain:
+                description: FullDomain is the public domain assigned to this resource
+                  (mode=http).
+                type: string
               niceId:
                 description: NiceID is the human-readable resource ID from Pangolin.
                 type: string

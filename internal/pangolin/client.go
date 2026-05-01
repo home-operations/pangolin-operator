@@ -335,6 +335,29 @@ func ResolveDomainID(domains []Domain, fullDomain string) (string, bool) {
 	return best, best != ""
 }
 
+// ResolveDomain returns the domainId and the subdomain portion of fullDomain
+// against the most-specific matching baseDomain. Subdomain is empty when
+// fullDomain is itself a base domain. Wildcard fullDomains (e.g. "*.example.com")
+// are passed through with subdomain="*".
+func ResolveDomain(domains []Domain, fullDomain string) (domainID, subdomain string, ok bool) {
+	id, ok := ResolveDomainID(domains, fullDomain)
+	if !ok {
+		return "", "", false
+	}
+	for _, d := range domains {
+		if d.DomainID != id {
+			continue
+		}
+		sub := strings.TrimSuffix(fullDomain, "."+d.BaseDomain)
+		sub = strings.TrimSuffix(sub, d.BaseDomain)
+		if sub != fullDomain {
+			subdomain = sub
+		}
+		break
+	}
+	return id, subdomain, true
+}
+
 type CreateResourceRequest struct {
 	Name     string `json:"name"`
 	Http     bool   `json:"http"`
@@ -490,20 +513,26 @@ func (c *Client) DeleteTarget(ctx context.Context, targetID int) error {
 type CreateSiteResourceRequest struct {
 	Name               string   `json:"name"`
 	SiteID             int      `json:"siteId"`
-	Mode               string   `json:"mode"`        // "host", "cidr"
-	Destination        string   `json:"destination"` // IP, hostname, or CIDR
-	TcpPortRangeString string   `json:"tcpPortRangeString"`
-	UdpPortRangeString string   `json:"udpPortRangeString"`
+	Mode               string   `json:"mode"`
+	Destination        string   `json:"destination"`
+	TcpPortRangeString string   `json:"tcpPortRangeString,omitempty"`
+	UdpPortRangeString string   `json:"udpPortRangeString,omitempty"`
 	DisableIcmp        bool     `json:"disableIcmp,omitempty"`
 	Alias              string   `json:"alias,omitempty"`
 	RoleIds            []int    `json:"roleIds"`
 	UserIds            []string `json:"userIds"`
 	ClientIds          []int    `json:"clientIds"`
+	Ssl                *bool    `json:"ssl,omitempty"`
+	Scheme             string   `json:"scheme,omitempty"`
+	DomainId           string   `json:"domainId,omitempty"`
+	Subdomain          string   `json:"subdomain,omitempty"`
+	DestinationPort    int      `json:"destinationPort,omitempty"`
 }
 
 type CreateSiteResourceResponse struct {
 	SiteResourceID int    `json:"siteResourceId"`
 	NiceID         string `json:"niceId,omitempty"`
+	FullDomain     string `json:"fullDomain,omitempty"`
 }
 
 func (c *Client) CreateSiteResource(ctx context.Context, req CreateSiteResourceRequest) (*CreateSiteResourceResponse, error) {
@@ -523,6 +552,9 @@ type SiteResourceItem struct {
 	Mode           string `json:"mode"`
 	Destination    string `json:"destination"`
 	Enabled        bool   `json:"enabled"`
+	FullDomain     string `json:"fullDomain,omitempty"`
+	DomainID       string `json:"domainId,omitempty"`
+	Subdomain      string `json:"subdomain,omitempty"`
 }
 
 type listSiteResourcesResponse struct {
@@ -547,11 +579,11 @@ func (c *Client) ListSiteResources(ctx context.Context, query string) ([]SiteRes
 }
 
 type UpdateSiteResourceRequest struct {
-	// siteId, userIds, roleIds, clientIds are required by the API even on update.
-	SiteID             int      `json:"siteId"`
+	// userIds, roleIds, clientIds are required by the API even on update.
 	UserIds            []string `json:"userIds"`
 	RoleIds            []int    `json:"roleIds"`
 	ClientIds          []int    `json:"clientIds"`
+	SiteID             int      `json:"siteId,omitempty"`
 	Name               string   `json:"name,omitempty"`
 	Mode               string   `json:"mode,omitempty"`
 	Destination        string   `json:"destination,omitempty"`
@@ -559,6 +591,11 @@ type UpdateSiteResourceRequest struct {
 	UdpPortRangeString string   `json:"udpPortRangeString,omitempty"`
 	DisableIcmp        bool     `json:"disableIcmp,omitempty"`
 	Alias              string   `json:"alias,omitempty"`
+	Ssl                *bool    `json:"ssl,omitempty"`
+	Scheme             string   `json:"scheme,omitempty"`
+	DomainId           string   `json:"domainId,omitempty"`
+	Subdomain          string   `json:"subdomain,omitempty"`
+	DestinationPort    int      `json:"destinationPort,omitempty"`
 }
 
 func (c *Client) UpdateSiteResource(ctx context.Context, siteResourceID int, req UpdateSiteResourceRequest) error {

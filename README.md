@@ -229,6 +229,17 @@ spec:
       method: http   # http | https | h2c
 ```
 
+#### Wildcard subdomains (Pangolin 1.18+)
+
+Set `fullDomain` to a wildcard like `*.apps.example.com` to route every hostname at that level through the same resource. The original Host header is preserved so downstream routing keeps working.
+
+```yaml
+spec:
+  fullDomain: "*.apps.example.com"
+```
+
+Wildcards require a TLS certificate that covers `*.apps.example.com`, which means **DNS-01 validation** in your Pangolin/Traefik setup. HTTP-01 only proves a single exact hostname.
+
 ### TCP / UDP
 
 ```yaml
@@ -284,7 +295,9 @@ spec:
 
 ## PrivateResource
 
-Registers a host, CIDR range, or port with the Pangolin OLM VPN. Clients with the appropriate roles gain access through the newt tunnel.
+Registers a host, CIDR range, or HTTP web app with the Pangolin OLM VPN. Clients with the appropriate roles gain access through the newt tunnel.
+
+### host / cidr
 
 ```yaml
 apiVersion: pangolin.home-operations.com/v1alpha1
@@ -295,7 +308,7 @@ metadata:
 spec:
   siteRef: homelab
   name: Cluster Pod Network
-  mode: cidr              # host | cidr
+  mode: cidr              # host | cidr | http
   destination: 10.42.0.0/16
   tcpPorts: "*"
   udpPorts: "*"
@@ -306,6 +319,30 @@ spec:
 ```
 
 In `host` mode, `destination` can be an IP address or a hostname. If it is a hostname, `alias` (a FQDN) is required.
+
+### http (Pangolin 1.18+)
+
+`mode: http` exposes a private web resource on a Pangolin-managed domain with a valid TLS certificate. The URL is **only reachable when the user has an active Pangolin client connection** — nothing is exposed on the public internet.
+
+```yaml
+apiVersion: pangolin.home-operations.com/v1alpha1
+kind: PrivateResource
+metadata:
+  name: internal-grafana
+  namespace: monitoring
+spec:
+  siteRef: homelab
+  name: Internal Grafana
+  mode: http
+  fullDomain: grafana.internal.example.com   # must be a subdomain of a Pangolin-managed domain
+  destination: grafana.monitoring.svc.cluster.local
+  destinationPort: 3000
+  scheme: http        # http | https (backend protocol; default http)
+  ssl: true           # public-facing TLS (default true)
+  roleIds: [1]
+```
+
+The `fullDomain` is resolved against the organisation's Pangolin domains the same way `PublicResource.fullDomain` is. Adoption of an existing Pangolin private HTTP resource matches by `name` + `mode` + `fullDomain` (rather than `destination`), so changing the backend hostname or port reuses the existing resource.
 
 ## Auto-discovery
 

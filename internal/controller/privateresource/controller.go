@@ -26,6 +26,7 @@ const (
 	PrivateResourceFinalizer = "pangolin.home-operations.com/privateresource-finalizer"
 	resyncInterval           = shared.ResyncInterval
 	reconcileTimeout         = shared.ReconcileTimeout
+	modeHTTP                 = "http"
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=privateresources,verbs=get;list;watch;create;update;patch;delete
@@ -181,6 +182,7 @@ func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.Pri
 		return true, r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 			s.SiteResourceID = match.SiteResourceID
 			s.NiceID = match.NiceID
+			s.FullDomain = match.FullDomain
 			s.Phase = pangolinv1alpha1.PrivateResourcePhaseCreating
 		})
 	}
@@ -188,10 +190,21 @@ func (r *Reconciler) ensureExists(ctx context.Context, res *pangolinv1alpha1.Pri
 	return false, r.createSiteResource(ctx, res, siteID)
 }
 
-// findSiteResource returns the first item matching by Name + Destination + Mode + SiteID.
+// findSiteResource matches by Name+Mode and either FullDomain (mode=http) or
+// Destination+SiteID. HTTP resources match on FullDomain so the backend can
+// change without forcing a recreate.
 func findSiteResource(items []pangolin.SiteResourceItem, spec pangolinv1alpha1.PrivateResourceSpec, siteID int) *pangolin.SiteResourceItem {
 	for i, item := range items {
-		if item.Name == spec.Name && item.Destination == spec.Destination && item.Mode == spec.Mode && item.SiteID == siteID {
+		if item.Name != spec.Name || item.Mode != spec.Mode {
+			continue
+		}
+		if spec.Mode == modeHTTP {
+			if spec.FullDomain != "" && item.FullDomain == spec.FullDomain {
+				return &items[i]
+			}
+			continue
+		}
+		if item.Destination == spec.Destination && item.SiteID == siteID {
 			return &items[i]
 		}
 	}
@@ -206,6 +219,34 @@ func orEmpty[T any](s []T) []T {
 	return s
 }
 
+// httpFields holds the mode=http payload fields shared by create and update.
+type httpFields struct {
+	DomainID, Subdomain, Scheme string
+	DestinationPort             int
+	Ssl                         *bool
+}
+
+func (r *Reconciler) httpFieldsFor(ctx context.Context, spec pangolinv1alpha1.PrivateResourceSpec) (httpFields, error) {
+	if spec.FullDomain == "" {
+		return httpFields{}, fmt.Errorf("fullDomain is required when mode is %q", modeHTTP)
+	}
+	domains, err := r.PangolinClient.ListDomains(ctx)
+	if err != nil {
+		return httpFields{}, fmt.Errorf("ListDomains: %w", err)
+	}
+	domainID, subdomain, ok := pangolin.ResolveDomain(domains, spec.FullDomain)
+	if !ok {
+		return httpFields{}, fmt.Errorf("no Pangolin domain matches %q", spec.FullDomain)
+	}
+	return httpFields{
+		DomainID:        domainID,
+		Subdomain:       subdomain,
+		Scheme:          spec.Scheme,
+		DestinationPort: spec.DestinationPort,
+		Ssl:             spec.Ssl,
+	}, nil
+}
+
 func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
 	logger := log.FromContext(ctx)
 
@@ -215,19 +256,30 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 		return err
 	}
 
-	created, err := r.PangolinClient.CreateSiteResource(ctx, pangolin.CreateSiteResourceRequest{
-		Name:               res.Spec.Name,
-		SiteID:             siteID,
-		Mode:               res.Spec.Mode,
-		Destination:        res.Spec.Destination,
-		TcpPortRangeString: res.Spec.TcpPorts,
-		UdpPortRangeString: res.Spec.UdpPorts,
-		DisableIcmp:        res.Spec.DisableIcmp,
-		Alias:              res.Spec.Alias,
-		RoleIds:            orEmpty(res.Spec.RoleIds),
-		UserIds:            orEmpty(res.Spec.UserIds),
-		ClientIds:          orEmpty(res.Spec.ClientIds),
-	})
+	req := pangolin.CreateSiteResourceRequest{
+		Name:        res.Spec.Name,
+		SiteID:      siteID,
+		Mode:        res.Spec.Mode,
+		Destination: res.Spec.Destination,
+		DisableIcmp: res.Spec.DisableIcmp,
+		Alias:       res.Spec.Alias,
+		RoleIds:     orEmpty(res.Spec.RoleIds),
+		UserIds:     orEmpty(res.Spec.UserIds),
+		ClientIds:   orEmpty(res.Spec.ClientIds),
+	}
+	if res.Spec.Mode == modeHTTP {
+		h, err := r.httpFieldsFor(ctx, res.Spec)
+		if err != nil {
+			return err
+		}
+		req.DomainId, req.Subdomain = h.DomainID, h.Subdomain
+		req.Scheme, req.DestinationPort, req.Ssl = h.Scheme, h.DestinationPort, h.Ssl
+	} else {
+		req.TcpPortRangeString = res.Spec.TcpPorts
+		req.UdpPortRangeString = res.Spec.UdpPorts
+	}
+
+	created, err := r.PangolinClient.CreateSiteResource(ctx, req)
 	if err != nil {
 		return fmt.Errorf("CreateSiteResource: %w", err)
 	}
@@ -236,6 +288,7 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 	if patchErr := r.patchStatus(ctx, res, func(s *pangolinv1alpha1.PrivateResourceStatus) {
 		s.SiteResourceID = created.SiteResourceID
 		s.NiceID = created.NiceID
+		s.FullDomain = created.FullDomain
 		s.Phase = pangolinv1alpha1.PrivateResourcePhaseCreating
 	}); patchErr != nil {
 		// Rollback to avoid orphaned Pangolin site resource.
@@ -249,19 +302,30 @@ func (r *Reconciler) createSiteResource(ctx context.Context, res *pangolinv1alph
 }
 
 func (r *Reconciler) updateSiteResource(ctx context.Context, res *pangolinv1alpha1.PrivateResource, siteID int) error {
-	if err := r.PangolinClient.UpdateSiteResource(ctx, res.Status.SiteResourceID, pangolin.UpdateSiteResourceRequest{
-		SiteID:             siteID,
-		Name:               res.Spec.Name,
-		Mode:               res.Spec.Mode,
-		Destination:        res.Spec.Destination,
-		TcpPortRangeString: res.Spec.TcpPorts,
-		UdpPortRangeString: res.Spec.UdpPorts,
-		DisableIcmp:        res.Spec.DisableIcmp,
-		Alias:              res.Spec.Alias,
-		RoleIds:            orEmpty(res.Spec.RoleIds),
-		UserIds:            orEmpty(res.Spec.UserIds),
-		ClientIds:          orEmpty(res.Spec.ClientIds),
-	}); err != nil {
+	req := pangolin.UpdateSiteResourceRequest{
+		SiteID:      siteID,
+		Name:        res.Spec.Name,
+		Mode:        res.Spec.Mode,
+		Destination: res.Spec.Destination,
+		DisableIcmp: res.Spec.DisableIcmp,
+		Alias:       res.Spec.Alias,
+		RoleIds:     orEmpty(res.Spec.RoleIds),
+		UserIds:     orEmpty(res.Spec.UserIds),
+		ClientIds:   orEmpty(res.Spec.ClientIds),
+	}
+	if res.Spec.Mode == modeHTTP {
+		h, err := r.httpFieldsFor(ctx, res.Spec)
+		if err != nil {
+			return err
+		}
+		req.DomainId, req.Subdomain = h.DomainID, h.Subdomain
+		req.Scheme, req.DestinationPort, req.Ssl = h.Scheme, h.DestinationPort, h.Ssl
+	} else {
+		req.TcpPortRangeString = res.Spec.TcpPorts
+		req.UdpPortRangeString = res.Spec.UdpPorts
+	}
+
+	if err := r.PangolinClient.UpdateSiteResource(ctx, res.Status.SiteResourceID, req); err != nil {
 		return fmt.Errorf("UpdateSiteResource: %w", err)
 	}
 	return nil
