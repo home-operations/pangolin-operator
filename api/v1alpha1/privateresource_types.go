@@ -147,7 +147,3 @@ type PrivateResourceList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []PrivateResource `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&PrivateResource{}, &PrivateResourceList{})
-}
