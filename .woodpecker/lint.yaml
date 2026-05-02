@@ -7,7 +7,7 @@ when:
 
 steps:
   - name: lint
-    image: golangci/golangci-lint:v2.11.4
+    image: golangci/golangci-lint:v2.12.1
     commands:
       - golangci-lint run ./...
 
