@@ -1,0 +1,18 @@
+[tools]
+go = "1.26.3"
+helm = "4.2.0"
+kubectl = "latest"
+kind = "latest"
+kustomize = "5.8.1"
+golangci-lint = "2.12.2"
+kube-controller-tools = "0.21.0"
+setup-envtest = "0.24.1"
+operator-sdk = "1.42.2"
+"aqua:evilmartians/lefthook" = "2.1.8"
+"aqua:google/yamlfmt" = "0.21.0"
+"aqua:operator-framework/operator-registry" = "1.68.0"
+"aqua:zizmorcore/zizmor" = "1.25.2"
+"go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "latest"
+
+[hooks]
+postinstall = "lefthook install"
