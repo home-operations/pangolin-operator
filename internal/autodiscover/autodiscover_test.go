@@ -478,6 +478,9 @@ func TestBuildHTTPRouteSpec_Defaults(t *testing.T) {
 	if spec.TlsServerName != testHostname {
 		t.Errorf("expected TlsServerName=hostname, got %q", spec.TlsServerName)
 	}
+	if !spec.Enabled {
+		t.Error("HTTPRoute autodiscovery should default Enabled=true")
+	}
 }
 
 func TestBuildHTTPRouteSpec_MethodAnnotationOverride(t *testing.T) {
@@ -885,26 +888,26 @@ func TestBuildAllPortSpecs_EnabledAnnotation(t *testing.T) {
 	}
 }
 
-func TestBuildSinglePortSpec_DefaultEnabledFalse(t *testing.T) {
+func TestBuildSinglePortSpec_DefaultEnabledTrue(t *testing.T) {
 	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
 	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
-	if spec.Enabled {
-		t.Error("service autodiscovery should default Enabled=false")
+	if !spec.Enabled {
+		t.Error("service autodiscovery should default Enabled=true")
 	}
 }
 
-func TestBuildSinglePortSpec_FullDomain_DefaultEnabledFalse(t *testing.T) {
+func TestBuildSinglePortSpec_FullDomain_DefaultEnabledTrue(t *testing.T) {
 	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
 	ann := map[string]string{"pangolin-operator/full-domain": testHostname}
 	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
-	if spec.Enabled {
-		t.Error("service autodiscovery should default Enabled=false")
+	if !spec.Enabled {
+		t.Error("service autodiscovery should default Enabled=true")
 	}
 }
 
@@ -920,7 +923,7 @@ func TestBuildSinglePortSpec_EnabledAnnotationTrue(t *testing.T) {
 	}
 }
 
-func TestBuildAllPortSpecs_DefaultEnabledFalse(t *testing.T) {
+func TestBuildAllPortSpecs_DefaultEnabledTrue(t *testing.T) {
 	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
 	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	key := ServiceResourceName(testNamespace, "my-svc", "80", testProtocolTCP)
@@ -928,8 +931,8 @@ func TestBuildAllPortSpecs_DefaultEnabledFalse(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing key %q", key)
 	}
-	if spec.Enabled {
-		t.Error("service autodiscovery should default Enabled=false")
+	if !spec.Enabled {
+		t.Error("service autodiscovery should default Enabled=true")
 	}
 }
 
@@ -1069,6 +1072,9 @@ func TestBuildTCPRouteSpec_Defaults(t *testing.T) {
 	}
 	if spec.Targets[0].Port != 5432 {
 		t.Errorf("expected target port 5432, got %d", spec.Targets[0].Port)
+	}
+	if !spec.Enabled {
+		t.Error("TCPRoute autodiscovery should default Enabled=true")
 	}
 }
 

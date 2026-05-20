@@ -410,9 +410,7 @@ spec:
 
 Services can be exposed in TCP/UDP mode or HTTP mode (when `pangolin-operator/full-domain` is set).
 
-Service discovery is enabled by setting `enableServiceDiscovery: true` on `autoDiscover`. Once enabled, any Service annotated with `pangolin-operator/site-ref` is discovered.
-
-Unlike HTTPRoute discovery, the resulting Pangolin resource is created **disabled by default** — a Service is a generic primitive used by every workload, so the operator only creates the resource and leaves activation to you. Annotate with `pangolin-operator/enabled: "true"` to opt the Service in; `"false"` is the default and keeps the resource disabled in Pangolin.
+Service discovery is enabled by setting `enableServiceDiscovery: true` on `autoDiscover`. Once enabled, any Service annotated with `pangolin-operator/site-ref` is discovered and exposed through Pangolin. Annotate with `pangolin-operator/enabled: "false"` to opt a specific Service out.
 
 #### Service annotations
 
@@ -420,7 +418,7 @@ Unlike HTTPRoute discovery, the resulting Pangolin resource is created **disable
 |---|---|
 | `pangolin-operator/site-ref` | Name of the `NewtSite` (required) |
 | `pangolin-operator/site-namespace` | Namespace of the `NewtSite` |
-| `pangolin-operator/enabled` | `"true"` to opt in; `"false"` to opt out |
+| `pangolin-operator/enabled` | `"false"` to opt out |
 | `pangolin-operator/full-domain` | Public domain — activates HTTP mode |
 | `pangolin-operator/port` | Port number or name to expose (required when Service has multiple ports and none named `http`) |
 | `pangolin-operator/protocol` | `tcp` or `udp` (TCP/UDP mode only) |

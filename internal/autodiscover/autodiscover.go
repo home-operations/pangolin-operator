@@ -178,17 +178,16 @@ func (r annotationResolver) targetExtras(base pangolinv1alpha1.PublicTargetSpec)
 }
 
 // buildHTTPSpec builds a PublicResourceSpec for an HTTP protocol resource.
-// Shared by HTTPRoute and Service (with full-domain) discovery.
-// The enabled parameter controls the default: route discovery passes r.enabled()
-// (default true), service discovery passes r.enabledOr(false).
-func (r annotationResolver) buildHTTPSpec(siteRef, name, hostname string, enabled bool, target pangolinv1alpha1.PublicTargetSpec) pangolinv1alpha1.PublicResourceSpec {
+// Shared by HTTPRoute and Service (with full-domain) discovery. Enabled defaults
+// to true and can be overridden per-resource with the `enabled` annotation.
+func (r annotationResolver) buildHTTPSpec(siteRef, name, hostname string, target pangolinv1alpha1.PublicTargetSpec) pangolinv1alpha1.PublicResourceSpec {
 	return pangolinv1alpha1.PublicResourceSpec{
 		SiteRef:       siteRef,
 		Name:          name,
 		Protocol:      methodHTTP,
 		FullDomain:    hostname,
 		Ssl:           r.ssl(),
-		Enabled:       enabled,
+		Enabled:       r.enabled(),
 		HostHeader:    r.get("host-header"),
 		TlsServerName: r.tlsServerName(hostname),
 		Headers:       r.headers(),
@@ -201,15 +200,15 @@ func (r annotationResolver) buildHTTPSpec(siteRef, name, hostname string, enable
 
 // buildTCPSpec builds a PublicResourceSpec for a TCP/UDP protocol resource.
 // Shared by TCPRoute, Service (single-port), and Service (all-ports) discovery.
-// The enabled parameter controls the default: route discovery passes r.enabled()
-// (default true), service discovery passes r.enabledOr(false).
-func (r annotationResolver) buildTCPSpec(siteRef, name, protocol string, proxyPort int, enabled bool, target pangolinv1alpha1.PublicTargetSpec) pangolinv1alpha1.PublicResourceSpec {
+// Enabled defaults to true and can be overridden per-resource with the
+// `enabled` annotation.
+func (r annotationResolver) buildTCPSpec(siteRef, name, protocol string, proxyPort int, target pangolinv1alpha1.PublicTargetSpec) pangolinv1alpha1.PublicResourceSpec {
 	return pangolinv1alpha1.PublicResourceSpec{
 		SiteRef:   siteRef,
 		Name:      name,
 		Protocol:  protocol,
 		ProxyPort: proxyPort,
-		Enabled:   enabled,
+		Enabled:   r.enabled(),
 		Targets:   []pangolinv1alpha1.PublicTargetSpec{target},
 	}
 }
@@ -467,7 +466,7 @@ func BuildHTTPRouteSpec(route *gatewayv1.HTTPRoute, hostname string, annotations
 		Method:   r.method(targetMethod),
 	})
 
-	return r.buildHTTPSpec(siteRef, r.name(route.Name), hostname, r.enabled(), target), nil
+	return r.buildHTTPSpec(siteRef, r.name(route.Name), hostname, target), nil
 }
 
 func ResolveAllPorts(annotations map[string]string, prefix string, cfg *pangolinv1alpha1.AutoDiscoverSpec) bool {
@@ -492,7 +491,7 @@ func BuildAllPortSpecs(svc *corev1.Service, annotations map[string]string, cfg *
 		proto := serviceProtocol(p.Protocol)
 		target := pangolinv1alpha1.PublicTargetSpec{Hostname: clusterHostname, Port: int(p.Port)}
 		key := ServiceResourceName(svc.Namespace, svc.Name, strconv.Itoa(int(p.Port)), proto)
-		out[key] = r.buildTCPSpec(siteRef, fmt.Sprintf("%s-%s", svc.Name, portName), proto, int(p.Port), r.enabledOr(false), target)
+		out[key] = r.buildTCPSpec(siteRef, fmt.Sprintf("%s-%s", svc.Name, portName), proto, int(p.Port), target)
 	}
 	return out
 }
@@ -521,13 +520,13 @@ func BuildSinglePortSpec(svc *corev1.Service, annotations map[string]string, cfg
 			Method:   r.method(methodHTTP),
 		})
 		resName := HostnameToResourceName(svc.Name, fullDomain)
-		return resName, r.buildHTTPSpec(siteRef, displayName, fullDomain, r.enabledOr(false), target), true
+		return resName, r.buildHTTPSpec(siteRef, displayName, fullDomain, target), true
 	}
 
 	proto := r.protocol(serviceProtocol(selected.Protocol))
 	target := pangolinv1alpha1.PublicTargetSpec{Hostname: clusterHostname, Port: int(selected.Port)}
 	resName := ServiceResourceName(svc.Namespace, svc.Name, strconv.Itoa(int(selected.Port)), proto)
-	return resName, r.buildTCPSpec(siteRef, displayName, proto, int(selected.Port), r.enabledOr(false), target), true
+	return resName, r.buildTCPSpec(siteRef, displayName, proto, int(selected.Port), target), true
 }
 
 func selectPort(svc *corev1.Service, annotations map[string]string, prefix string) (*corev1.ServicePort, bool) {
@@ -579,7 +578,7 @@ func BuildTCPRouteSpec(route *gatewayv1alpha2.TCPRoute, annotations map[string]s
 	targetHostname, targetPort := resolveBackendRef(ref, route.Namespace, 0)
 	target := pangolinv1alpha1.PublicTargetSpec{Hostname: targetHostname, Port: targetPort}
 
-	return r.buildTCPSpec(siteRef, r.name(route.Name), "tcp", r.proxyPort(targetPort), r.enabled(), target), nil
+	return r.buildTCPSpec(siteRef, r.name(route.Name), "tcp", r.proxyPort(targetPort), target), nil
 }
 
 func EnsureTCPRouteResource(ctx context.Context, c client.Client, owner metav1.Object, routeName, namespace, resName string, spec pangolinv1alpha1.PublicResourceSpec) error {
