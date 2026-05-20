@@ -410,7 +410,9 @@ spec:
 
 Services can be exposed in TCP/UDP mode or HTTP mode (when `pangolin-operator/full-domain` is set).
 
-Service discovery is enabled by setting `enableServiceDiscovery: true` on `autoDiscover`. Once enabled, any Service annotated with `pangolin-operator/site-ref` is discovered. Annotate with `pangolin-operator/enabled: "false"` to exclude a specific Service.
+Service discovery is enabled by setting `enableServiceDiscovery: true` on `autoDiscover`. Once enabled, any Service annotated with `pangolin-operator/site-ref` is discovered.
+
+Unlike HTTPRoute discovery, the resulting Pangolin resource is created **disabled by default** — a Service is a generic primitive used by every workload, so the operator only creates the resource and leaves activation to you. Annotate with `pangolin-operator/enabled: "true"` to opt the Service in; `"false"` is the default and keeps the resource disabled in Pangolin.
 
 #### Service annotations
 
