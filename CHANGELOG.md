@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.1.4](https://github.com/home-operations/pangolin-operator/compare/0.1.3...0.1.4) (2026-05-20)
+
+
+### Features
+
+* **container:** update image alpine/helm (4.1.4 → 4.2.0) ([#34](https://github.com/home-operations/pangolin-operator/issues/34)) ([ae55d46](https://github.com/home-operations/pangolin-operator/commit/ae55d469c9d7811fca798d22c219404b5dbbd206))
+* **container:** update image golangci/golangci-lint (v2.11.4 → v2.12.2) ([#29](https://github.com/home-operations/pangolin-operator/issues/29)) ([f87311b](https://github.com/home-operations/pangolin-operator/commit/f87311b0032764afa92b0a6f305b30973c13ad75))
+
+
+### Bug Fixes
+
+* change autoDiscovery for service to act the same as HTTPRoute ([80f54ef](https://github.com/home-operations/pangolin-operator/commit/80f54ef0f1301d7ccab8abe223cb69261cb81611))
+* **deps:** update kubernetes monorepo (v0.36.0 → v0.36.1) ([#33](https://github.com/home-operations/pangolin-operator/issues/33)) ([7860e53](https://github.com/home-operations/pangolin-operator/commit/7860e53d6ceb9b7d16f717d86b82c55b85a3c394))
+
+
+### Miscellaneous Chores
+
+* add mise lockfile and update hooks ([9e36303](https://github.com/home-operations/pangolin-operator/commit/9e363034257a015164e23330079bc95f2bc91554))
+* consolidation and standardization ([fd39eb6](https://github.com/home-operations/pangolin-operator/commit/fd39eb61eabc318f620cde581aa4e8e3fbf65094))
+* **container:** update image gcr.io/distroless/static (e3f9456 → 963fa6c) ([#35](https://github.com/home-operations/pangolin-operator/issues/35)) ([6cdbc56](https://github.com/home-operations/pangolin-operator/commit/6cdbc568ccb1b273a63ce492c9814abd571a1315))
+* drop strict lockfile mode to unblock Renovate ([d7d89fe](https://github.com/home-operations/pangolin-operator/commit/d7d89fe495c3cc046c1593c474980c6b10d17cf1))
+* enable strict lockfile mode ([82cd7ad](https://github.com/home-operations/pangolin-operator/commit/82cd7adf4448db1927be09634f1825c4c65a2431))
+* extend lefthook from .github and split editorconfig ([ad22cae](https://github.com/home-operations/pangolin-operator/commit/ad22cae909a9b1e8e576c277768068a169ab4156))
+* ignore devcontainers in release-please config ([341d522](https://github.com/home-operations/pangolin-operator/commit/341d52220e46593f7ae5a6c573539b2cdc6e8b5a))
+* ignore mise and github deps in release please ([edc5d21](https://github.com/home-operations/pangolin-operator/commit/edc5d2164cf49624e9d8ee5e3d8178934df39d64))
+* ignore self config in release-please config ([3e22c90](https://github.com/home-operations/pangolin-operator/commit/3e22c9032d23ed9e8b37c9e8bc8411de703e8526))
+* more standardizing ([52fb757](https://github.com/home-operations/pangolin-operator/commit/52fb757a2fcf0e764ba3a6f33908ff0826e12767))
+
 ## [0.1.3](https://github.com/home-operations/pangolin-operator/compare/0.1.2...0.1.3) (2026-05-01)
 
 
