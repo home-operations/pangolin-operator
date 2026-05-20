@@ -32,6 +32,7 @@ const (
 	resyncInterval          = shared.ResyncInterval
 	reconcileTimeout        = shared.ReconcileTimeout
 	protocolHTTP            = "http"
+	protocolTCP             = "tcp"
 )
 
 // +kubebuilder:rbac:groups=pangolin.home-operations.com,resources=publicresources,verbs=get;list;watch;create;update;patch;delete
@@ -278,7 +279,7 @@ func (r *Reconciler) createResource(ctx context.Context, res *pangolinv1alpha1.P
 		ProxyPort: res.Spec.ProxyPort,
 	}
 	if isHTTP {
-		createReq.Protocol = "tcp"
+		createReq.Protocol = protocolTCP
 
 		if res.Spec.FullDomain != "" {
 			domains, err := r.PangolinClient.ListDomains(ctx)

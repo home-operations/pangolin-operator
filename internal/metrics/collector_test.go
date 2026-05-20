@@ -11,6 +11,8 @@ import (
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 )
 
+const testNamespace = "default"
+
 func newScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = pangolinv1alpha1.AddToScheme(s)
@@ -43,11 +45,11 @@ func TestCollector_CountsByPhase(t *testing.T) {
 	cl := fake.NewClientBuilder().WithScheme(newScheme()).
 		WithObjects(
 			&pangolinv1alpha1.NewtSite{
-				ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: testNamespace},
 				Status:     pangolinv1alpha1.NewtSiteStatus{Phase: pangolinv1alpha1.NewtSitePhaseReady, Online: true},
 			},
 			&pangolinv1alpha1.NewtSite{
-				ObjectMeta: metav1.ObjectMeta{Name: "s2", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "s2", Namespace: testNamespace},
 				Status:     pangolinv1alpha1.NewtSiteStatus{Phase: pangolinv1alpha1.NewtSitePhaseReady},
 			},
 			&pangolinv1alpha1.NewtSite{
@@ -55,11 +57,11 @@ func TestCollector_CountsByPhase(t *testing.T) {
 				Status:     pangolinv1alpha1.NewtSiteStatus{Phase: pangolinv1alpha1.NewtSitePhaseError},
 			},
 			&pangolinv1alpha1.PublicResource{
-				ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: testNamespace},
 				Status:     pangolinv1alpha1.PublicResourceStatus{Phase: pangolinv1alpha1.PublicResourcePhaseReady},
 			},
 			&pangolinv1alpha1.PrivateResource{
-				ObjectMeta: metav1.ObjectMeta{Name: "pr1", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "pr1", Namespace: testNamespace},
 				Status:     pangolinv1alpha1.PrivateResourceStatus{Phase: pangolinv1alpha1.PrivateResourcePhaseCreating},
 			},
 		).Build()
@@ -76,7 +78,7 @@ func TestCollector_EmptyPhaseDefaultsToPending(t *testing.T) {
 	cl := fake.NewClientBuilder().WithScheme(newScheme()).
 		WithObjects(
 			&pangolinv1alpha1.NewtSite{
-				ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: testNamespace},
 			},
 		).Build()
 

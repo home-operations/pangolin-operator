@@ -274,13 +274,13 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 			Name:      secretName,
 			Namespace: r.OperatorNamespace,
 			Labels: map[string]string{
-				shared.LabelManagedBy: "pangolin-operator",
+				shared.LabelManagedBy: partOfPangolinOp,
 			},
 		},
 		StringData: map[string]string{
-			"PANGOLIN_ENDPOINT": r.NewtEndpoint,
-			"NEWT_ID":           defaults.NewtID,
-			"NEWT_SECRET":       defaults.NewtSecret,
+			envPangolinEndpoint: r.NewtEndpoint,
+			envNewtID:           defaults.NewtID,
+			envNewtSecret:       defaults.NewtSecret,
 		},
 	}
 	if err := controllerutil.SetControllerReference(site, secret, r.Scheme); err != nil {
@@ -291,11 +291,11 @@ func (r *Reconciler) createSite(ctx context.Context, site *pangolinv1alpha1.Newt
 		if secret.Labels == nil {
 			secret.Labels = make(map[string]string)
 		}
-		secret.Labels[shared.LabelManagedBy] = "pangolin-operator"
+		secret.Labels[shared.LabelManagedBy] = partOfPangolinOp
 		secret.StringData = map[string]string{
-			"PANGOLIN_ENDPOINT": r.NewtEndpoint,
-			"NEWT_ID":           defaults.NewtID,
-			"NEWT_SECRET":       defaults.NewtSecret,
+			envPangolinEndpoint: r.NewtEndpoint,
+			envNewtID:           defaults.NewtID,
+			envNewtSecret:       defaults.NewtSecret,
 		}
 		return nil
 	}); err != nil {

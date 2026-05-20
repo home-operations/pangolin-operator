@@ -24,6 +24,17 @@ const (
 	methodHTTP  = "http"
 	methodHTTPS = "https"
 	methodH2C   = "h2c"
+
+	protocolTCP = "tcp"
+	protocolUDP = "udp"
+
+	boolFalse = "false"
+	boolTrue  = "true"
+
+	actionDROP         = "DROP"
+	rewriteStripPrefix = "stripPrefix"
+
+	matchCountry = "country"
 )
 
 func annotationPrefix(cfg *pangolinv1alpha1.AutoDiscoverSpec) string {
@@ -35,15 +46,15 @@ func annotationPrefix(cfg *pangolinv1alpha1.AutoDiscoverSpec) string {
 
 func IsOptOut(annotations map[string]string, prefix string) bool {
 	v, ok := annotations[prefix+"/enabled"]
-	return ok && (v == "false" || v == "0")
+	return ok && (v == boolFalse || v == "0")
 }
 
 func IsOptIn(annotations map[string]string, prefix string) bool {
 	v, ok := annotations[prefix+"/enabled"]
-	return ok && (v == "true" || v == "1")
+	return ok && (v == boolTrue || v == "1")
 }
 
-func isTruthy(v string) bool { return v == "true" || v == "1" }
+func isTruthy(v string) bool { return v == boolTrue || v == "1" }
 
 func splitCSV(s string) []string {
 	if s == "" {
@@ -150,7 +161,7 @@ func (r annotationResolver) proxyPort(defaultPort int) int {
 func (r annotationResolver) protocol(defaultProto string) string {
 	if v, ok := r.lookup("protocol"); ok {
 		v = strings.ToLower(strings.TrimSpace(v))
-		if v == "tcp" || v == "udp" {
+		if v == protocolTCP || v == protocolUDP {
 			return v
 		}
 	}
@@ -243,7 +254,7 @@ func buildRules(annotations map[string]string, prefix string, cfg *pangolinv1alp
 		for country := range strings.SplitSeq(cfg.DenyCountries, ",") {
 			country = strings.TrimSpace(country)
 			if country != "" {
-				rules = append(rules, pangolinv1alpha1.PublicRuleSpec{Action: "DROP", Match: "country", Value: country})
+				rules = append(rules, pangolinv1alpha1.PublicRuleSpec{Action: actionDROP, Match: matchCountry, Value: country})
 			}
 		}
 	}
@@ -254,8 +265,8 @@ func buildRules(annotations map[string]string, prefix string, cfg *pangolinv1alp
 }
 
 func isValidRule(r pangolinv1alpha1.PublicRuleSpec) bool {
-	validActions := map[string]bool{"ACCEPT": true, "DROP": true, "PASS": true}
-	validMatches := map[string]bool{"cidr": true, "ip": true, "path": true, "country": true}
+	validActions := map[string]bool{"ACCEPT": true, actionDROP: true, "PASS": true}
+	validMatches := map[string]bool{"cidr": true, "ip": true, "path": true, matchCountry: true}
 	if !validActions[r.Action] || !validMatches[r.Match] || r.Value == "" {
 		return false
 	}
@@ -349,7 +360,7 @@ func buildTargetExtras(base pangolinv1alpha1.PublicTargetSpec, annotations map[s
 	}
 	if v := strings.TrimSpace(annotations[prefix+"/target-rewrite-match"]); v != "" {
 		switch v {
-		case "exact", "prefix", "regex", "stripPrefix":
+		case "exact", "prefix", "regex", rewriteStripPrefix:
 			t.RewritePathType = v
 		}
 	}
@@ -553,9 +564,9 @@ func selectPort(svc *corev1.Service, annotations map[string]string, prefix strin
 
 func serviceProtocol(p corev1.Protocol) string {
 	if p == corev1.ProtocolUDP {
-		return "udp"
+		return protocolUDP
 	}
-	return "tcp"
+	return protocolTCP
 }
 
 func TCPRouteReferencesGateway(route *gatewayv1alpha2.TCPRoute, gatewayName, gatewayNamespace string) bool {
@@ -578,7 +589,7 @@ func BuildTCPRouteSpec(route *gatewayv1alpha2.TCPRoute, annotations map[string]s
 	targetHostname, targetPort := resolveBackendRef(ref, route.Namespace, 0)
 	target := pangolinv1alpha1.PublicTargetSpec{Hostname: targetHostname, Port: targetPort}
 
-	return r.buildTCPSpec(siteRef, r.name(route.Name), "tcp", r.proxyPort(targetPort), target), nil
+	return r.buildTCPSpec(siteRef, r.name(route.Name), protocolTCP, r.proxyPort(targetPort), target), nil
 }
 
 func EnsureTCPRouteResource(ctx context.Context, c client.Client, owner metav1.Object, routeName, namespace, resName string, spec pangolinv1alpha1.PublicResourceSpec) error {

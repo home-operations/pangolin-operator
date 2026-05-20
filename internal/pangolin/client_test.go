@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+const (
+	testSiteName   = "my-site"
+	testAppDomain  = "app.example.com"
+	testBaseDomain = "example.com"
+)
+
 func apiResponse(t *testing.T, w http.ResponseWriter, data any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
@@ -117,7 +123,7 @@ func TestCreateSite(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("could not decode request body: %v", err)
 		}
-		if req.Name != "my-site" {
+		if req.Name != testSiteName {
 			t.Errorf("unexpected site name: %q", req.Name)
 		}
 		if req.Address == "" {
@@ -128,7 +134,7 @@ func TestCreateSite(t *testing.T) {
 
 	c := newTestClient(t, mux)
 	got, err := c.CreateSite(context.Background(), CreateSiteRequest{
-		Name:    "my-site",
+		Name:    testSiteName,
 		Address: "100.90.128.0",
 		Type:    "newt",
 		NewtID:  "nid",
@@ -143,7 +149,7 @@ func TestCreateSite(t *testing.T) {
 }
 
 func TestGetSite(t *testing.T) {
-	want := GetSiteResponse{SiteID: 42, NiceID: "site-42", Name: "my-site", Online: false}
+	want := GetSiteResponse{SiteID: 42, NiceID: "site-42", Name: testSiteName, Online: false}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +219,7 @@ func TestDeleteSite(t *testing.T) {
 }
 
 func TestCreateResource(t *testing.T) {
-	want := CreateResourceResponse{ResourceID: 7, NiceID: "res-7", FullDomain: "app.example.com"}
+	want := CreateResourceResponse{ResourceID: 7, NiceID: "res-7", FullDomain: testAppDomain}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/test-org/resource", func(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +246,7 @@ func TestCreateResource(t *testing.T) {
 
 func TestListResources(t *testing.T) {
 	want := []ResourceItem{
-		{ResourceID: 7, Name: "my-resource", FullDomain: "app.example.com"},
+		{ResourceID: 7, Name: "my-resource", FullDomain: testAppDomain},
 		{ResourceID: 8, Name: "other-resource"},
 	}
 
@@ -385,7 +391,7 @@ func TestCreateSiteResource(t *testing.T) {
 
 func TestListSites(t *testing.T) {
 	want := []SiteItem{
-		{SiteID: 10, NiceID: "nice-10", Name: "my-site", Type: "newt"},
+		{SiteID: 10, NiceID: "nice-10", Name: testSiteName, Type: "newt"},
 		{SiteID: 11, NiceID: "nice-11", Name: "other-site", Type: "local"},
 	}
 
@@ -398,7 +404,7 @@ func TestListSites(t *testing.T) {
 	})
 
 	c := newTestClient(t, mux)
-	got, err := c.ListSites(context.Background(), "my-site")
+	got, err := c.ListSites(context.Background(), testSiteName)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -497,7 +503,7 @@ func TestDo_AuthorizationHeader(t *testing.T) {
 
 func TestListDomains(t *testing.T) {
 	want := []Domain{
-		{DomainID: "d1", BaseDomain: "example.com"},
+		{DomainID: "d1", BaseDomain: testBaseDomain},
 		{DomainID: "d2", BaseDomain: "test.io"},
 	}
 
@@ -524,7 +530,7 @@ func TestListDomains(t *testing.T) {
 
 func TestResolveDomainID(t *testing.T) {
 	domains := []Domain{
-		{DomainID: "d1", BaseDomain: "example.com"},
+		{DomainID: "d1", BaseDomain: testBaseDomain},
 		{DomainID: "d2", BaseDomain: "sub.example.com"},
 	}
 
@@ -534,8 +540,8 @@ func TestResolveDomainID(t *testing.T) {
 		wantID     string
 		wantOK     bool
 	}{
-		{"exact match", "example.com", "d1", true},
-		{"subdomain match", "app.example.com", "d1", true},
+		{"exact match", testBaseDomain, "d1", true},
+		{"subdomain match", testAppDomain, "d1", true},
 		{"longest suffix wins", "foo.sub.example.com", "d2", true},
 		{"no match", "other.io", "", false},
 	}

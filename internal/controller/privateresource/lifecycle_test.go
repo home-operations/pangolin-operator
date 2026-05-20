@@ -31,18 +31,18 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
 		if createCalls.Load() == 0 {
-			testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
+			testutil.PangolinResponse(t, w, map[string]any{siteResourcesKey: []any{}})
 			return
 		}
 		testutil.PangolinResponse(t, w, map[string]any{
-			"siteResources": []pangolin.SiteResourceItem{
-				{SiteResourceID: 20, NiceID: "sr-20", Name: "my-vpn", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+			siteResourcesKey: []pangolin.SiteResourceItem{
+				{SiteResourceID: 20, NiceID: testSr20, Name: testMyVPN, Mode: testMode, Destination: testDest, SiteID: 1},
 			},
 		})
 	})
 	mux.HandleFunc("/v1/org/org1/site-resource", func(w http.ResponseWriter, _ *http.Request) {
 		createCalls.Add(1)
-		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 20, NiceID: "sr-20"})
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 20, NiceID: testSr20})
 	})
 	mux.HandleFunc("/v1/site-resource/20", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -60,16 +60,16 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 
 	res := &pangolinv1alpha1.PrivateResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-vpn",
-			Namespace:  "default",
+			Name:       testMyVPN,
+			Namespace:  testNamespace,
 			Generation: 1,
 			Finalizers: []string{PrivateResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PrivateResourceSpec{
-			SiteRef:     "my-site",
-			Name:        "my-vpn",
-			Mode:        "host",
-			Destination: "10.0.0.5",
+			SiteRef:     testSiteRef,
+			Name:        testMyVPN,
+			Mode:        testMode,
+			Destination: testDest,
 			TcpPorts:    "*",
 		},
 	}
@@ -80,9 +80,9 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-vpn", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyVPN, Namespace: testNamespace}
 
 	// --- Phase 1: Create ---
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
@@ -150,8 +150,8 @@ func TestLifecycle_AdoptExistingSiteResource(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
-			"siteResources": []pangolin.SiteResourceItem{
-				{SiteResourceID: 77, NiceID: "sr-77", Name: "my-vpn", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+			siteResourcesKey: []pangolin.SiteResourceItem{
+				{SiteResourceID: 77, NiceID: "sr-77", Name: testMyVPN, Mode: testMode, Destination: testDest, SiteID: 1},
 			},
 		})
 	})
@@ -171,15 +171,15 @@ func TestLifecycle_AdoptExistingSiteResource(t *testing.T) {
 
 	res := &pangolinv1alpha1.PrivateResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-vpn",
-			Namespace:  "default",
+			Name:       testMyVPN,
+			Namespace:  testNamespace,
 			Finalizers: []string{PrivateResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PrivateResourceSpec{
-			SiteRef:     "my-site",
-			Name:        "my-vpn",
-			Mode:        "host",
-			Destination: "10.0.0.5",
+			SiteRef:     testSiteRef,
+			Name:        testMyVPN,
+			Mode:        testMode,
+			Destination: testDest,
 			TcpPorts:    "*",
 		},
 	}
@@ -190,9 +190,9 @@ func TestLifecycle_AdoptExistingSiteResource(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-vpn", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyVPN, Namespace: testNamespace}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -224,18 +224,18 @@ func TestLifecycle_CreateThenSteadyState(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
 		if createCalls.Load() == 0 {
-			testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
+			testutil.PangolinResponse(t, w, map[string]any{siteResourcesKey: []any{}})
 			return
 		}
 		testutil.PangolinResponse(t, w, map[string]any{
-			"siteResources": []pangolin.SiteResourceItem{
-				{SiteResourceID: 20, NiceID: "sr-20", Name: "my-vpn", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+			siteResourcesKey: []pangolin.SiteResourceItem{
+				{SiteResourceID: 20, NiceID: testSr20, Name: testMyVPN, Mode: testMode, Destination: testDest, SiteID: 1},
 			},
 		})
 	})
 	mux.HandleFunc("/v1/org/org1/site-resource", func(w http.ResponseWriter, _ *http.Request) {
 		createCalls.Add(1)
-		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 20, NiceID: "sr-20"})
+		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{SiteResourceID: 20, NiceID: testSr20})
 	})
 	mux.HandleFunc("/v1/site-resource/20", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
@@ -249,16 +249,16 @@ func TestLifecycle_CreateThenSteadyState(t *testing.T) {
 
 	res := &pangolinv1alpha1.PrivateResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-vpn",
-			Namespace:  "default",
+			Name:       testMyVPN,
+			Namespace:  testNamespace,
 			Generation: 1,
 			Finalizers: []string{PrivateResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PrivateResourceSpec{
-			SiteRef:     "my-site",
-			Name:        "my-vpn",
-			Mode:        "host",
-			Destination: "10.0.0.5",
+			SiteRef:     testSiteRef,
+			Name:        testMyVPN,
+			Mode:        testMode,
+			Destination: testDest,
 			TcpPorts:    "*",
 		},
 	}
@@ -269,9 +269,9 @@ func TestLifecycle_CreateThenSteadyState(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-vpn", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyVPN, Namespace: testNamespace}
 
 	// First reconcile: create.
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
@@ -304,8 +304,8 @@ func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
-			"siteResources": []pangolin.SiteResourceItem{
-				{SiteResourceID: 77, NiceID: "sr-77", Name: "my-vpn", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+			siteResourcesKey: []pangolin.SiteResourceItem{
+				{SiteResourceID: 77, NiceID: "sr-77", Name: testMyVPN, Mode: testMode, Destination: testDest, SiteID: 1},
 			},
 		})
 	})
@@ -321,15 +321,15 @@ func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
 
 	res := &pangolinv1alpha1.PrivateResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-vpn",
-			Namespace:  "default",
+			Name:       testMyVPN,
+			Namespace:  testNamespace,
 			Finalizers: []string{PrivateResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PrivateResourceSpec{
-			SiteRef:     "my-site",
-			Name:        "my-vpn",
-			Mode:        "host",
-			Destination: "10.0.0.5",
+			SiteRef:     testSiteRef,
+			Name:        testMyVPN,
+			Mode:        testMode,
+			Destination: testDest,
 			TcpPorts:    "*",
 		},
 	}
@@ -340,9 +340,9 @@ func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-vpn", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyVPN, Namespace: testNamespace}
 
 	// First reconcile: adopt + update.
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
@@ -374,14 +374,14 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 		if n == 1 {
 			// First call: resource still in list → ensureExists passes.
 			testutil.PangolinResponse(t, w, map[string]any{
-				"siteResources": []pangolin.SiteResourceItem{
-					{SiteResourceID: 55, Name: "my-vpn", Mode: "host", Destination: "10.0.0.5", SiteID: 1},
+				siteResourcesKey: []pangolin.SiteResourceItem{
+					{SiteResourceID: 55, Name: testMyVPN, Mode: testMode, Destination: testDest, SiteID: 1},
 				},
 			})
 			return
 		}
 		// Subsequent calls: resource gone → triggers re-create.
-		testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
+		testutil.PangolinResponse(t, w, map[string]any{siteResourcesKey: []any{}})
 	})
 	mux.HandleFunc("/v1/site-resource/55", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -395,16 +395,16 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 
 	res := &pangolinv1alpha1.PrivateResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-vpn",
-			Namespace:  "default",
+			Name:       testMyVPN,
+			Namespace:  testNamespace,
 			Generation: 2,
 			Finalizers: []string{PrivateResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PrivateResourceSpec{
-			SiteRef:     "my-site",
-			Name:        "my-vpn",
-			Mode:        "host",
-			Destination: "10.0.0.5",
+			SiteRef:     testSiteRef,
+			Name:        testMyVPN,
+			Mode:        testMode,
+			Destination: testDest,
 		},
 		Status: pangolinv1alpha1.PrivateResourceStatus{
 			SiteResourceID:     55,
@@ -418,9 +418,9 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-vpn", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyVPN, Namespace: testNamespace}
 
 	// First reconcile: ensureExists passes, updateSiteResource returns 404 → reset + requeue.
 	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn})
@@ -469,14 +469,14 @@ func TestLifecycle_HTTPMode_CreateResolvesDomain(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
-		testutil.PangolinResponse(t, w, map[string]any{"siteResources": []any{}})
+		testutil.PangolinResponse(t, w, map[string]any{siteResourcesKey: []any{}})
 	})
 	mux.HandleFunc("/v1/org/org1/site-resource", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&receivedReq)
 		testutil.PangolinResponse(t, w, pangolin.CreateSiteResourceResponse{
 			SiteResourceID: 42,
 			NiceID:         "sr-42",
-			FullDomain:     "grafana.internal.example.com",
+			FullDomain:     testInternalDomain,
 		})
 	})
 	mux.HandleFunc("/v1/site-resource/42", func(w http.ResponseWriter, r *http.Request) {
@@ -492,18 +492,18 @@ func TestLifecycle_HTTPMode_CreateResolvesDomain(t *testing.T) {
 	res := &pangolinv1alpha1.PrivateResource{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "internal-grafana",
-			Namespace:  "default",
+			Namespace:  testNamespace,
 			Generation: 1,
 			Finalizers: []string{PrivateResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PrivateResourceSpec{
-			SiteRef:         "my-site",
+			SiteRef:         testSiteRef,
 			Name:            "Internal Grafana",
-			Mode:            "http",
-			FullDomain:      "grafana.internal.example.com",
+			Mode:            modeHTTP,
+			FullDomain:      testInternalDomain,
 			Destination:     "grafana.monitoring.svc.cluster.local",
 			DestinationPort: 3000,
-			Scheme:          "http",
+			Scheme:          modeHTTP,
 			Ssl:             &sslTrue,
 		},
 	}
@@ -514,15 +514,15 @@ func TestLifecycle_HTTPMode_CreateResolvesDomain(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "internal-grafana", Namespace: "default"}
+	nn := types.NamespacedName{Name: "internal-grafana", Namespace: testNamespace}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
-	if receivedReq.Mode != "http" {
+	if receivedReq.Mode != modeHTTP {
 		t.Errorf("expected mode=http, got %q", receivedReq.Mode)
 	}
 	// Most-specific domain wins.
@@ -532,7 +532,7 @@ func TestLifecycle_HTTPMode_CreateResolvesDomain(t *testing.T) {
 	if receivedReq.Subdomain != "grafana" {
 		t.Errorf("expected subdomain=grafana, got %q", receivedReq.Subdomain)
 	}
-	if receivedReq.Scheme != "http" {
+	if receivedReq.Scheme != modeHTTP {
 		t.Errorf("expected scheme=http, got %q", receivedReq.Scheme)
 	}
 	if receivedReq.DestinationPort != 3000 {
@@ -550,7 +550,7 @@ func TestLifecycle_HTTPMode_CreateResolvesDomain(t *testing.T) {
 	if err := cl.Get(context.Background(), nn, &created); err != nil {
 		t.Fatalf("get after create: %v", err)
 	}
-	if created.Status.FullDomain != "grafana.internal.example.com" {
+	if created.Status.FullDomain != testInternalDomain {
 		t.Errorf("expected status.fullDomain=grafana.internal.example.com, got %q", created.Status.FullDomain)
 	}
 	if created.Status.SiteResourceID != 42 {
@@ -572,14 +572,14 @@ func TestLifecycle_HTTPMode_AdoptByFullDomain(t *testing.T) {
 	})
 	mux.HandleFunc("/v1/org/org1/site-resources", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
-			"siteResources": []pangolin.SiteResourceItem{
+			siteResourcesKey: []pangolin.SiteResourceItem{
 				{
 					SiteResourceID: 99,
 					NiceID:         "sr-99",
-					Name:           "my-http",
-					Mode:           "http",
+					Name:           testHTTPName,
+					Mode:           modeHTTP,
 					Destination:    "old-backend.svc",
-					FullDomain:     "app.example.com",
+					FullDomain:     testHTTPDomain,
 					SiteID:         1,
 				},
 			},
@@ -600,15 +600,15 @@ func TestLifecycle_HTTPMode_AdoptByFullDomain(t *testing.T) {
 
 	res := &pangolinv1alpha1.PrivateResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-http",
-			Namespace:  "default",
+			Name:       testHTTPName,
+			Namespace:  testNamespace,
 			Finalizers: []string{PrivateResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PrivateResourceSpec{
-			SiteRef:         "my-site",
-			Name:            "my-http",
-			Mode:            "http",
-			FullDomain:      "app.example.com",
+			SiteRef:         testSiteRef,
+			Name:            testHTTPName,
+			Mode:            modeHTTP,
+			FullDomain:      testHTTPDomain,
 			Destination:     "new-backend.svc", // different from live, but FullDomain matches
 			DestinationPort: 8080,
 		},
@@ -620,9 +620,9 @@ func TestLifecycle_HTTPMode_AdoptByFullDomain(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PrivateResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-http", Namespace: "default"}
+	nn := types.NamespacedName{Name: testHTTPName, Namespace: testNamespace}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -638,7 +638,7 @@ func TestLifecycle_HTTPMode_AdoptByFullDomain(t *testing.T) {
 	if adopted.Status.SiteResourceID != 99 {
 		t.Errorf("expected adopted SiteResourceID=99, got %d", adopted.Status.SiteResourceID)
 	}
-	if adopted.Status.FullDomain != "app.example.com" {
+	if adopted.Status.FullDomain != testHTTPDomain {
 		t.Errorf("expected status.fullDomain=app.example.com, got %q", adopted.Status.FullDomain)
 	}
 }

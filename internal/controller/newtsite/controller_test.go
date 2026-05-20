@@ -18,6 +18,11 @@ import (
 	"github.com/home-operations/pangolin-operator/internal/testutil"
 )
 
+const (
+	testNewName = "new-name"
+	testOrgID   = "org1"
+)
+
 // TestUpdateSite_CallsAPIWhenNameDiffers verifies that updateSite calls UpdateSite
 // when the live name in Pangolin differs from spec.name.
 func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
@@ -32,7 +37,7 @@ func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
 			updateCalled = true
 			var req pangolin.UpdateSiteRequest
 			_ = json.NewDecoder(r.Body).Decode(&req)
-			if req.Name != "new-name" {
+			if req.Name != testNewName {
 				t.Errorf("expected name 'new-name', got %q", req.Name)
 			}
 			testutil.PangolinResponse(t, w, nil)
@@ -50,14 +55,14 @@ func TestUpdateSite_CallsAPIWhenNameDiffers(t *testing.T) {
 
 	pc := pangolin.NewClient(pangolin.Credentials{
 		Endpoint: srv.URL,
-		APIKey:   "key",
-		OrgID:    "org1",
+		APIKey:   testKey,
+		OrgID:    testOrgID,
 	})
-	r := &Reconciler{Client: cl, Scheme: testutil.NewScheme(), PangolinClient: pc, OperatorNamespace: "default"}
+	r := &Reconciler{Client: cl, Scheme: testutil.NewScheme(), PangolinClient: pc, OperatorNamespace: testNamespace}
 
 	site := &pangolinv1alpha1.NewtSite{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
-		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: "new-name"},
+		ObjectMeta: metav1.ObjectMeta{Name: testSiteName, Namespace: testNamespace},
+		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: testNewName},
 		Status:     pangolinv1alpha1.NewtSiteStatus{SiteID: 42},
 	}
 
@@ -89,13 +94,13 @@ func TestUpdateSite_SkipsAPIWhenNameUnchanged(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	site := &pangolinv1alpha1.NewtSite{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testSiteName, Namespace: testNamespace},
 		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: "same-name"},
 		Status:     pangolinv1alpha1.NewtSiteStatus{SiteID: 42},
 	}
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
 
-	r := &Reconciler{Client: testutil.NewClientBuilder(testutil.NewScheme()).Build(), Scheme: testutil.NewScheme(), PangolinClient: pc, OperatorNamespace: "default"}
+	r := &Reconciler{Client: testutil.NewClientBuilder(testutil.NewScheme()).Build(), Scheme: testutil.NewScheme(), PangolinClient: pc, OperatorNamespace: testNamespace}
 	if err := r.updateSite(context.Background(), site); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,7 +118,7 @@ func TestFSindOrCreate_AdoptsExistingSite(t *testing.T) {
 			Sites []pangolin.SiteItem `json:"sites"`
 		}{
 			Sites: []pangolin.SiteItem{
-				{SiteID: 99, NiceID: "nice-99", Name: "my-site", Type: "newt"},
+				{SiteID: 99, NiceID: "nice-99", Name: testSiteName, Type: containerName},
 			},
 		})
 	})
@@ -126,8 +131,8 @@ func TestFSindOrCreate_AdoptsExistingSite(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	site := &pangolinv1alpha1.NewtSite{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
-		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+		ObjectMeta: metav1.ObjectMeta{Name: testSiteName, Namespace: testNamespace},
+		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: testSiteName},
 	}
 
 	scheme := testutil.NewScheme()
@@ -136,8 +141,8 @@ func TestFSindOrCreate_AdoptsExistingSite(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 
 	if err := r.findOrCreate(context.Background(), site); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -181,8 +186,8 @@ func TestFindOrCreate_CreatesWhenNotFound(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	site := &pangolinv1alpha1.NewtSite{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-site", Namespace: "default"},
-		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+		ObjectMeta: metav1.ObjectMeta{Name: testSiteName, Namespace: testNamespace},
+		Spec:       pangolinv1alpha1.NewtSiteSpec{Name: testSiteName},
 	}
 
 	scheme := testutil.NewScheme()
@@ -191,8 +196,8 @@ func TestFindOrCreate_CreatesWhenNotFound(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 
 	if err := r.findOrCreate(context.Background(), site); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -237,11 +242,11 @@ func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-site",
-			Namespace:  "default",
+			Name:       testSiteName,
+			Namespace:  testNamespace,
 			Finalizers: []string{NewtSiteFinalizer},
 		},
-		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: testSiteName},
 	}
 
 	scheme := testutil.NewScheme()
@@ -250,10 +255,10 @@ func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSiteName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -264,7 +269,7 @@ func TestReconcile_CreateSite_PassesAddress(t *testing.T) {
 
 	// The credential secret should exist.
 	var secret corev1.Secret
-	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-site-newt-credentials", Namespace: "default"}, &secret); err != nil {
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: testCredentials, Namespace: testNamespace}, &secret); err != nil {
 		t.Errorf("expected newt-credentials secret to be created: %v", err)
 	}
 }
@@ -290,16 +295,16 @@ func TestReconcile_Update_CallsUpdateSiteOnGenerationChange(t *testing.T) {
 
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-site",
-			Namespace:  "default",
+			Name:       testSiteName,
+			Namespace:  testNamespace,
 			Generation: 2,
 			Finalizers: []string{NewtSiteFinalizer},
 		},
-		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "new-name"},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: testNewName},
 		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1,
-			NewtSecretName:     "my-site-newt-credentials",
+			NewtSecretName:     testCredentials,
 		},
 	}
 
@@ -309,10 +314,10 @@ func TestReconcile_Update_CallsUpdateSiteOnGenerationChange(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSiteName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -341,8 +346,8 @@ func TestCleanup_DeletesSiteAndRemovesFinalizer(t *testing.T) {
 	now := metav1.Now()
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:              "my-site",
-			Namespace:         "default",
+			Name:              testSiteName,
+			Namespace:         testNamespace,
 			Finalizers:        []string{NewtSiteFinalizer},
 			DeletionTimestamp: &now,
 		},
@@ -356,10 +361,10 @@ func TestCleanup_DeletesSiteAndRemovesFinalizer(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSiteName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -370,7 +375,7 @@ func TestCleanup_DeletesSiteAndRemovesFinalizer(t *testing.T) {
 
 	// Finalizer should have been removed.
 	var updated pangolinv1alpha1.NewtSite
-	_ = cl.Get(context.Background(), client.ObjectKey{Name: "my-site", Namespace: "default"}, &updated)
+	_ = cl.Get(context.Background(), client.ObjectKey{Name: testSiteName, Namespace: testNamespace}, &updated)
 	for _, f := range updated.Finalizers {
 		if f == NewtSiteFinalizer {
 			t.Error("expected finalizer to be removed after cleanup")
@@ -394,16 +399,16 @@ func TestReconcile_DriftDetection_ResetsSiteIDOn404(t *testing.T) {
 
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-site",
-			Namespace:  "default",
+			Name:       testSiteName,
+			Namespace:  testNamespace,
 			Generation: 1,
 			Finalizers: []string{NewtSiteFinalizer},
 		},
-		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: testSiteName},
 		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1, // generation matches — steady state
-			NewtSecretName:     "my-site-newt-credentials",
+			NewtSecretName:     testCredentials,
 		},
 	}
 
@@ -413,10 +418,10 @@ func TestReconcile_DriftDetection_ResetsSiteIDOn404(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSiteName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -426,7 +431,7 @@ func TestReconcile_DriftDetection_ResetsSiteIDOn404(t *testing.T) {
 	}
 
 	var updated pangolinv1alpha1.NewtSite
-	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-site", Namespace: "default"}, &updated); err != nil {
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: testSiteName, Namespace: testNamespace}, &updated); err != nil {
 		t.Fatalf("failed to get site: %v", err)
 	}
 	if updated.Status.SiteID != 0 {
@@ -447,16 +452,16 @@ func TestReconcile_UpdateSite_Handles404(t *testing.T) {
 
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-site",
-			Namespace:  "default",
+			Name:       testSiteName,
+			Namespace:  testNamespace,
 			Generation: 2,
 			Finalizers: []string{NewtSiteFinalizer},
 		},
-		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "new-name"},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: testNewName},
 		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1, // generation mismatch triggers update path
-			NewtSecretName:     "my-site-newt-credentials",
+			NewtSecretName:     testCredentials,
 		},
 	}
 
@@ -466,10 +471,10 @@ func TestReconcile_UpdateSite_Handles404(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSiteName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -479,7 +484,7 @@ func TestReconcile_UpdateSite_Handles404(t *testing.T) {
 	}
 
 	var updated pangolinv1alpha1.NewtSite
-	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-site", Namespace: "default"}, &updated); err != nil {
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: testSiteName, Namespace: testNamespace}, &updated); err != nil {
 		t.Fatalf("failed to get site: %v", err)
 	}
 	if updated.Status.SiteID != 0 {
@@ -493,7 +498,7 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/site/42", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			testutil.PangolinResponse(t, w, pangolin.GetSiteResponse{SiteID: 42, Name: "my-site"})
+			testutil.PangolinResponse(t, w, pangolin.GetSiteResponse{SiteID: 42, Name: testSiteName})
 		}
 	})
 
@@ -502,16 +507,16 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-site",
-			Namespace:  "default",
+			Name:       testSiteName,
+			Namespace:  testNamespace,
 			Generation: 1,
 			Finalizers: []string{NewtSiteFinalizer},
 		},
-		Spec: pangolinv1alpha1.NewtSiteSpec{Name: "my-site"},
+		Spec: pangolinv1alpha1.NewtSiteSpec{Name: testSiteName},
 		Status: pangolinv1alpha1.NewtSiteStatus{ //nolint:gosec // test fixture, not real credentials
 			SiteID:             42,
 			ObservedGeneration: 1,
-			NewtSecretName:     "my-site-newt-credentials",
+			NewtSecretName:     testCredentials,
 		},
 	}
 
@@ -521,10 +526,10 @@ func TestReconcile_PeriodicResync(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSiteName, Namespace: testNamespace},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -549,8 +554,8 @@ func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {
 	now := metav1.Now()
 	site := &pangolinv1alpha1.NewtSite{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:              "my-site",
-			Namespace:         "default",
+			Name:              testSiteName,
+			Namespace:         testNamespace,
 			Finalizers:        []string{NewtSiteFinalizer},
 			DeletionTimestamp: &now,
 		},
@@ -564,10 +569,10 @@ func TestCleanup_FailsAndRetriesOnDeleteError(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.NewtSite{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
-	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: "default"}
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testKey, OrgID: testOrgID})
+	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc, OperatorNamespace: testNamespace}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-site", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testSiteName, Namespace: testNamespace},
 	})
 	if err == nil {
 		t.Fatal("expected error when Pangolin delete fails")

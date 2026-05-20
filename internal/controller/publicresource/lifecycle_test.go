@@ -35,16 +35,16 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 	// ListResources — empty on first call (triggers create), returns resource on subsequent calls.
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
 		if createResourceCalls.Load() == 0 {
-			testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+			testutil.PangolinResponse(t, w, map[string]any{resourcesKey: []any{}})
 			return
 		}
 		testutil.PangolinResponse(t, w, map[string]any{
-			"resources": []pangolin.ResourceItem{{ResourceID: 10, Name: "my-app", NiceID: "r-10"}},
+			resourcesKey: []pangolin.ResourceItem{{ResourceID: 10, Name: testMyApp, NiceID: testR10}},
 		})
 	})
 	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, _ *http.Request) {
 		createResourceCalls.Add(1)
-		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 10, NiceID: "r-10"})
+		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 10, NiceID: testR10})
 	})
 	mux.HandleFunc("/v1/resource/10/target", func(w http.ResponseWriter, _ *http.Request) {
 		createTargetCalls.Add(1)
@@ -72,16 +72,16 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-app",
-			Namespace:  "default",
+			Name:       testMyApp,
+			Namespace:  testNamespace,
 			Generation: 1,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:  "my-site",
-			Name:     "my-app",
-			Protocol: "tcp",
-			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}},
+			SiteRef:  testMySite,
+			Name:     testMyApp,
+			Protocol: protocolTCP,
+			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80}},
 		},
 	}
 
@@ -91,9 +91,9 @@ func TestLifecycle_CreateUpdateDelete(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyApp, Namespace: testNamespace}
 
 	// --- Phase 1: Create ---
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
@@ -170,8 +170,8 @@ func TestLifecycle_AdoptExistingResource(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
-			"resources": []pangolin.ResourceItem{
-				{ResourceID: 42, NiceID: "r-42", Name: "my-app", FullDomain: "app.example.com"},
+			resourcesKey: []pangolin.ResourceItem{
+				{ResourceID: 42, NiceID: "r-42", Name: testMyApp, FullDomain: testAppDomain},
 			},
 		})
 	})
@@ -194,16 +194,16 @@ func TestLifecycle_AdoptExistingResource(t *testing.T) {
 
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-app",
-			Namespace:  "default",
+			Name:       testMyApp,
+			Namespace:  testNamespace,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:    "my-site",
-			Name:       "my-app",
-			Protocol:   "http",
-			FullDomain: "app.example.com",
-			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80, Method: "http"}},
+			SiteRef:    testMySite,
+			Name:       testMyApp,
+			Protocol:   protocolHTTP,
+			FullDomain: testAppDomain,
+			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80, Method: protocolHTTP}},
 		},
 	}
 
@@ -213,9 +213,9 @@ func TestLifecycle_AdoptExistingResource(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyApp, Namespace: testNamespace}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -246,8 +246,8 @@ func TestLifecycle_ReAdoptWithStaleHashes(t *testing.T) {
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
 		// The old resource (ID=10) is gone; a new one (ID=77) matches.
 		testutil.PangolinResponse(t, w, map[string]any{
-			"resources": []pangolin.ResourceItem{
-				{ResourceID: 77, NiceID: "r-77", Name: "my-app", FullDomain: "app.example.com"},
+			resourcesKey: []pangolin.ResourceItem{
+				{ResourceID: 77, NiceID: "r-77", Name: testMyApp, FullDomain: testAppDomain},
 			},
 		})
 	})
@@ -264,24 +264,24 @@ func TestLifecycle_ReAdoptWithStaleHashes(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	targets := []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80, Method: "http"}}
+	targets := []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80, Method: protocolHTTP}}
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-app",
-			Namespace:  "default",
+			Name:       testMyApp,
+			Namespace:  testNamespace,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:    "my-site",
-			Name:       "my-app",
-			Protocol:   "http",
-			FullDomain: "app.example.com",
+			SiteRef:    testMySite,
+			Name:       testMyApp,
+			Protocol:   protocolHTTP,
+			FullDomain: testAppDomain,
 			Targets:    targets,
 		},
 		Status: pangolinv1alpha1.PublicResourceStatus{
 			// Simulate a previously-reconciled resource with stale hashes.
 			ResourceID:  10,
-			NiceID:      "r-10",
+			NiceID:      testR10,
 			TargetIDs:   []int{99},
 			TargetsHash: hashJSON(targets),
 		},
@@ -293,9 +293,9 @@ func TestLifecycle_ReAdoptWithStaleHashes(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyApp, Namespace: testNamespace}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -326,16 +326,16 @@ func TestLifecycle_CreateThenSteadyState(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
 		if createResourceCalls.Load() == 0 {
-			testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+			testutil.PangolinResponse(t, w, map[string]any{resourcesKey: []any{}})
 			return
 		}
 		testutil.PangolinResponse(t, w, map[string]any{
-			"resources": []pangolin.ResourceItem{{ResourceID: 10, Name: "my-app", NiceID: "r-10"}},
+			resourcesKey: []pangolin.ResourceItem{{ResourceID: 10, Name: testMyApp, NiceID: testR10}},
 		})
 	})
 	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, _ *http.Request) {
 		createResourceCalls.Add(1)
-		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 10, NiceID: "r-10"})
+		testutil.PangolinResponse(t, w, pangolin.CreateResourceResponse{ResourceID: 10, NiceID: testR10})
 	})
 	mux.HandleFunc("/v1/resource/10/target", func(w http.ResponseWriter, _ *http.Request) {
 		createTargetCalls.Add(1)
@@ -353,16 +353,16 @@ func TestLifecycle_CreateThenSteadyState(t *testing.T) {
 
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-app",
-			Namespace:  "default",
+			Name:       testMyApp,
+			Namespace:  testNamespace,
 			Generation: 1,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:  "my-site",
-			Name:     "my-app",
-			Protocol: "tcp",
-			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}},
+			SiteRef:  testMySite,
+			Name:     testMyApp,
+			Protocol: protocolTCP,
+			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80}},
 		},
 	}
 
@@ -372,9 +372,9 @@ func TestLifecycle_CreateThenSteadyState(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyApp, Namespace: testNamespace}
 
 	// First reconcile: create.
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
@@ -415,8 +415,8 @@ func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
-			"resources": []pangolin.ResourceItem{
-				{ResourceID: 42, NiceID: "r-42", Name: "my-app", FullDomain: "app.example.com"},
+			resourcesKey: []pangolin.ResourceItem{
+				{ResourceID: 42, NiceID: "r-42", Name: testMyApp, FullDomain: testAppDomain},
 			},
 		})
 	})
@@ -436,16 +436,16 @@ func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
 
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-app",
-			Namespace:  "default",
+			Name:       testMyApp,
+			Namespace:  testNamespace,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:    "my-site",
-			Name:       "my-app",
-			Protocol:   "http",
-			FullDomain: "app.example.com",
-			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80, Method: "http"}},
+			SiteRef:    testMySite,
+			Name:       testMyApp,
+			Protocol:   protocolHTTP,
+			FullDomain: testAppDomain,
+			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80, Method: protocolHTTP}},
 		},
 	}
 
@@ -455,9 +455,9 @@ func TestLifecycle_AdoptThenSteadyState(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-app", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyApp, Namespace: testNamespace}
 
 	// First reconcile: adopt + update.
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
@@ -513,7 +513,7 @@ func TestLifecycle_UpdatePersistsBeforeDelete(t *testing.T) {
 		if r.Method == http.MethodDelete {
 			// Capture the K8s status at the moment the old target is being deleted.
 			var snap pangolinv1alpha1.PublicResource
-			if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-res", Namespace: "default"}, &snap); err != nil {
+			if err := cl.Get(context.Background(), client.ObjectKey{Name: testMyRes, Namespace: testNamespace}, &snap); err != nil {
 				t.Errorf("get inside delete handler: %v", err)
 			}
 			statusAtDeleteTime = snap.Status
@@ -525,9 +525,9 @@ func TestLifecycle_UpdatePersistsBeforeDelete(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	res := &pangolinv1alpha1.PublicResource{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-res", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testMyRes, Namespace: testNamespace},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			Name:    "my-res",
+			Name:    testMyRes,
 			Targets: newTargets,
 		},
 		Status: pangolinv1alpha1.PublicResourceStatus{
@@ -540,7 +540,7 @@ func TestLifecycle_UpdatePersistsBeforeDelete(t *testing.T) {
 		t.Fatalf("create fixture: %v", err)
 	}
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	rec := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
 
 	if err := rec.updateResource(context.Background(), res, 1); err != nil {
@@ -566,7 +566,7 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 
 	oldRules := []pangolinv1alpha1.PublicRuleSpec{{Action: "DROP", Match: "IP", Value: "1.2.3.4"}}
 	newRules := []pangolinv1alpha1.PublicRuleSpec{{Action: "ACCEPT", Match: "CIDR", Value: "10.0.0.0/8"}}
-	targets := []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}}
+	targets := []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, r *http.Request) {
@@ -591,9 +591,9 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	res := &pangolinv1alpha1.PublicResource{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-res", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testMyRes, Namespace: testNamespace},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			Name:    "my-res",
+			Name:    testMyRes,
 			Targets: targets,
 			Rules:   newRules,
 		},
@@ -612,7 +612,7 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	rec := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
 
 	if err := rec.updateResource(context.Background(), res, 1); err != nil {
@@ -626,7 +626,7 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 	}
 
 	var updated pangolinv1alpha1.PublicResource
-	if err := cl.Get(context.Background(), client.ObjectKey{Name: "my-res", Namespace: "default"}, &updated); err != nil {
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: testMyRes, Namespace: testNamespace}, &updated); err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	if updated.Status.RulesHash != hashJSON(newRules) {
@@ -639,11 +639,11 @@ func TestLifecycle_RulesUpdateCycle(t *testing.T) {
 func TestLifecycle_400BadRequest_SetsErrorPhase(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
-		testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+		testutil.PangolinResponse(t, w, map[string]any{resourcesKey: []any{}})
 	})
 	mux.HandleFunc("/v1/org/org1/resource", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{"message": "invalid proxy port"})
+		_ = json.NewEncoder(w).Encode(map[string]any{messageKey: "invalid proxy port"})
 	})
 
 	srv := httptest.NewServer(mux)
@@ -651,16 +651,16 @@ func TestLifecycle_400BadRequest_SetsErrorPhase(t *testing.T) {
 
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "bad-res",
-			Namespace:  "default",
+			Name:       testBadRes,
+			Namespace:  testNamespace,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:   "my-site",
-			Name:      "bad-res",
+			SiteRef:   testMySite,
+			Name:      testBadRes,
 			Protocol:  "tcp",
 			ProxyPort: -1,
-			Targets:   []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}},
+			Targets:   []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80}},
 		},
 	}
 
@@ -670,10 +670,10 @@ func TestLifecycle_400BadRequest_SetsErrorPhase(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "bad-res", Namespace: "default"},
+		NamespacedName: types.NamespacedName{Name: testBadRes, Namespace: testNamespace},
 	})
 	if err == nil {
 		t.Fatal("expected terminal error on 400 bad request")
@@ -683,7 +683,7 @@ func TestLifecycle_400BadRequest_SetsErrorPhase(t *testing.T) {
 	}
 
 	var updated pangolinv1alpha1.PublicResource
-	if err := cl.Get(context.Background(), client.ObjectKey{Name: "bad-res", Namespace: "default"}, &updated); err != nil {
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: testBadRes, Namespace: testNamespace}, &updated); err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	if updated.Status.Phase != pangolinv1alpha1.PublicResourcePhaseError {
@@ -702,12 +702,12 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 		if n == 1 {
 			// First call: resource still exists in list → ensureExists passes.
 			testutil.PangolinResponse(t, w, map[string]any{
-				"resources": []pangolin.ResourceItem{{ResourceID: 7, Name: "my-res"}},
+				resourcesKey: []pangolin.ResourceItem{{ResourceID: 7, Name: testMyRes}},
 			})
 			return
 		}
 		// Subsequent calls: resource gone → triggers re-create.
-		testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+		testutil.PangolinResponse(t, w, map[string]any{resourcesKey: []any{}})
 	})
 	mux.HandleFunc("/v1/resource/7", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -729,16 +729,16 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "my-res",
-			Namespace:  "default",
+			Name:       testMyRes,
+			Namespace:  testNamespace,
 			Generation: 2,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:  "my-site",
-			Name:     "my-res",
-			Protocol: "tcp",
-			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80}},
+			SiteRef:  testMySite,
+			Name:     testMyRes,
+			Protocol: protocolTCP,
+			Targets:  []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80}},
 		},
 		Status: pangolinv1alpha1.PublicResourceStatus{
 			ResourceID:         7,
@@ -754,9 +754,9 @@ func TestLifecycle_UpdateNotFound_ResetsAndRecreates(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "my-res", Namespace: "default"}
+	nn := types.NamespacedName{Name: testMyRes, Namespace: testNamespace}
 
 	// First reconcile: ensureExists passes (resource in list), but updateResource
 	// returns 404 → resets ResourceID and requeues.
@@ -797,13 +797,13 @@ func TestLifecycle_WildcardSubdomain(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/org/org1/resources", func(w http.ResponseWriter, _ *http.Request) {
-		testutil.PangolinResponse(t, w, map[string]any{"resources": []any{}})
+		testutil.PangolinResponse(t, w, map[string]any{resourcesKey: []any{}})
 	})
 	mux.HandleFunc("/v1/org/org1/domains", func(w http.ResponseWriter, _ *http.Request) {
 		testutil.PangolinResponse(t, w, map[string]any{
-			"domains": []map[string]any{
-				{"domainId": "dom-1", "baseDomain": "example.com"},
-				{"domainId": "dom-2", "baseDomain": "apps.example.com"},
+			domainsKey: []map[string]any{
+				{domainIDKey: testDom1, baseDomainKey: testExampleDomain},
+				{domainIDKey: "dom-2", baseDomainKey: "apps.example.com"},
 			},
 		})
 	})
@@ -816,7 +816,7 @@ func TestLifecycle_WildcardSubdomain(t *testing.T) {
 	mux.HandleFunc("/v1/resource/21", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			testutil.PangolinResponse(t, w, pangolin.ResourceItem{ResourceID: 21, Name: "wild"})
+			testutil.PangolinResponse(t, w, pangolin.ResourceItem{ResourceID: 21, Name: testWild})
 		case http.MethodPost:
 			testutil.PangolinResponse(t, w, nil)
 		}
@@ -830,16 +830,16 @@ func TestLifecycle_WildcardSubdomain(t *testing.T) {
 
 	res := &pangolinv1alpha1.PublicResource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       "wild",
-			Namespace:  "default",
+			Name:       testWild,
+			Namespace:  testNamespace,
 			Finalizers: []string{PublicResourceFinalizer},
 		},
 		Spec: pangolinv1alpha1.PublicResourceSpec{
-			SiteRef:    "my-site",
-			Name:       "wild",
-			Protocol:   "http",
+			SiteRef:    testMySite,
+			Name:       testWild,
+			Protocol:   protocolHTTP,
 			FullDomain: "*.apps.example.com",
-			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: "backend.svc", Port: 80, Method: "http"}},
+			Targets:    []pangolinv1alpha1.PublicTargetSpec{{Hostname: testBackendSvc, Port: 80, Method: protocolHTTP}},
 		},
 	}
 
@@ -849,9 +849,9 @@ func TestLifecycle_WildcardSubdomain(t *testing.T) {
 		WithStatusSubresource(&pangolinv1alpha1.PublicResource{}).
 		Build()
 
-	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: "key", OrgID: "org1"})
+	pc := pangolin.NewClient(pangolin.Credentials{Endpoint: srv.URL, APIKey: testAPIKey, OrgID: testOrgID})
 	r := &Reconciler{Client: cl, Scheme: scheme, PangolinClient: pc}
-	nn := types.NamespacedName{Name: "wild", Namespace: "default"}
+	nn := types.NamespacedName{Name: testWild, Namespace: testNamespace}
 
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn}); err != nil {
 		t.Fatalf("reconcile: %v", err)

@@ -12,7 +12,18 @@ import (
 	pangolinv1alpha1 "github.com/home-operations/pangolin-operator/api/v1alpha1"
 )
 
-const defaultMTU = 1280
+const (
+	defaultMTU = 1280
+
+	envPangolinEndpoint = "PANGOLIN_ENDPOINT"
+	envNewtID           = "NEWT_ID"
+	envNewtSecret       = "NEWT_SECRET"
+	envLogLevel         = "LOG_LEVEL"
+	envDNS              = "DNS"
+
+	newtContainerName = "newt"
+	partOfPangolinOp  = "pangolin-operator"
+)
 
 // buildDeployment constructs the appsv1.Deployment for the newt tunnel pod.
 // secretName is the name of the Secret containing PANGOLIN_ENDPOINT, NEWT_ID, NEWT_SECRET.
@@ -41,41 +52,41 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName, namespace stri
 	labels := map[string]string{
 		"app.kubernetes.io/name":      "newtsite",
 		"app.kubernetes.io/instance":  site.Name,
-		"app.kubernetes.io/component": "newt",
-		"app.kubernetes.io/part-of":   "pangolin-operator",
+		"app.kubernetes.io/component": newtContainerName,
+		"app.kubernetes.io/part-of":   partOfPangolinOp,
 	}
 
 	// --- main newt container ---
 	env := []corev1.EnvVar{
 		{
-			Name: "PANGOLIN_ENDPOINT",
+			Name: envPangolinEndpoint,
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-					Key:                  "PANGOLIN_ENDPOINT",
+					Key:                  envPangolinEndpoint,
 				},
 			},
 		},
 		{
-			Name: "NEWT_ID",
+			Name: envNewtID,
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-					Key:                  "NEWT_ID",
+					Key:                  envNewtID,
 				},
 			},
 		},
 		{
-			Name: "NEWT_SECRET",
+			Name: envNewtSecret,
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-					Key:                  "NEWT_SECRET",
+					Key:                  envNewtSecret,
 				},
 			},
 		},
 		{
-			Name:  "LOG_LEVEL",
+			Name:  envLogLevel,
 			Value: logLevel,
 		},
 	}
@@ -92,12 +103,12 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName, namespace stri
 		env = append(env, corev1.EnvVar{Name: "PING_TIMEOUT", Value: spec.PingTimeout})
 	}
 	if spec.DNS != "" {
-		env = append(env, corev1.EnvVar{Name: "DNS", Value: spec.DNS})
+		env = append(env, corev1.EnvVar{Name: envDNS, Value: spec.DNS})
 	}
 	if spec.AcceptClients {
 		env = append(env, corev1.EnvVar{Name: "ACCEPT_CLIENTS", Value: "true"})
 	}
-	if spec.Interface != "" && spec.Interface != "newt" {
+	if spec.Interface != "" && spec.Interface != newtContainerName {
 		env = append(env, corev1.EnvVar{Name: "INTERFACE", Value: spec.Interface})
 	}
 	if spec.Metrics != nil {
@@ -128,7 +139,7 @@ func buildDeployment(site *pangolinv1alpha1.NewtSite, secretName, namespace stri
 	containerSecCtx, podSecCtx := buildSecurityContexts(spec)
 
 	newtContainer := corev1.Container{
-		Name:            "newt",
+		Name:            newtContainerName,
 		Image:           image + ":" + tag,
 		Env:             env,
 		SecurityContext: containerSecCtx,

@@ -9,10 +9,13 @@ import (
 )
 
 const (
-	namespace       = "pangolin"
-	endpointTarget  = "target"
-	endpointRule    = "rule"
-	endpointUnknown = "unknown"
+	namespace            = "pangolin"
+	endpointTarget       = "target"
+	endpointRule         = "rule"
+	endpointUnknown      = "unknown"
+	endpointSite         = "site"
+	endpointResource     = "resource"
+	endpointSiteResource = "site_resource"
 )
 
 var (
@@ -55,9 +58,9 @@ func ClassifyEndpoint(rawURL string) string {
 	switch first {
 	case "pick-site-defaults":
 		return "site_defaults"
-	case "site":
-		return "site"
-	case "resource":
+	case endpointSite:
+		return endpointSite
+	case endpointResource:
 		if len(segments) >= 3 {
 			switch segments[2] {
 			case endpointTarget:
@@ -66,13 +69,13 @@ func ClassifyEndpoint(rawURL string) string {
 				return endpointRule
 			}
 		}
-		return "resource"
+		return endpointResource
 	case endpointTarget:
 		return endpointTarget
 	case endpointRule:
 		return endpointRule
 	case "site-resource":
-		return "site_resource"
+		return endpointSiteResource
 	case "domains":
 		return "domain"
 	default:

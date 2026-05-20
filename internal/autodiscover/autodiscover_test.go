@@ -20,13 +20,28 @@ const (
 	testNamespace   = "default"
 	testHostname    = "app.example.com"
 	testPathMatch   = "prefix"
-	testProtocolTCP = "tcp"
+	testProtocolTCP = protocolTCP
 	testSiteRef     = "my-site"
+
+	testRouteName     = "my-route"
+	testTCPRouteName  = "my-tcp-route"
+	testGatewayName   = "envoy-external"
+	testGatewayNS     = "network"
+	testGatewayHost   = "envoy-external.network.svc.cluster.local"
+	testMyGateway     = "my-gateway"
+	testRoleAdmin     = "admin"
+	testPortMetrics   = "metrics"
+	testSiteRefAnn    = "pangolin-operator/site-ref"
+	testFullDomainAnn = "pangolin-operator/full-domain"
+	testPortAnn       = "pangolin-operator/port"
+	testEnabledAnn    = "pangolin-operator/enabled"
+	testMethodAnn     = "pangolin-operator/method"
+	testInvalidMethod = "grpc"
 )
 
 func newHTTPRoute(parentRefs []gatewayv1.ParentReference) *gatewayv1.HTTPRoute {
 	return &gatewayv1.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-route", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testRouteName, Namespace: testNamespace},
 		Spec: gatewayv1.HTTPRouteSpec{
 			CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: parentRefs},
 		},
@@ -42,7 +57,7 @@ func newHTTPRouteWithBackendRef(svcName, namespace string, port *gatewayv1.PortN
 		ns = &n
 	}
 	return &gatewayv1.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-route", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testRouteName, Namespace: testNamespace},
 		Spec: gatewayv1.HTTPRouteSpec{
 			Rules: []gatewayv1.HTTPRouteRule{
 				{
@@ -95,9 +110,9 @@ func TestIsOptOut(t *testing.T) {
 		ann  map[string]string
 		want bool
 	}{
-		{map[string]string{"pangolin-operator/enabled": "false"}, true},
-		{map[string]string{"pangolin-operator/enabled": "0"}, true},
-		{map[string]string{"pangolin-operator/enabled": "true"}, false},
+		{map[string]string{testEnabledAnn: boolFalse}, true},
+		{map[string]string{testEnabledAnn: "0"}, true},
+		{map[string]string{testEnabledAnn: boolTrue}, false},
 		{map[string]string{}, false},
 	}
 	for _, tt := range tests {
@@ -112,9 +127,9 @@ func TestIsOptIn(t *testing.T) {
 		ann  map[string]string
 		want bool
 	}{
-		{map[string]string{"pangolin-operator/enabled": "true"}, true},
-		{map[string]string{"pangolin-operator/enabled": "1"}, true},
-		{map[string]string{"pangolin-operator/enabled": "false"}, false},
+		{map[string]string{testEnabledAnn: boolTrue}, true},
+		{map[string]string{testEnabledAnn: "1"}, true},
+		{map[string]string{testEnabledAnn: boolFalse}, false},
 		{map[string]string{}, false},
 	}
 	for _, tt := range tests {
@@ -178,15 +193,15 @@ func TestIsValidRule(t *testing.T) {
 		rule pangolinv1alpha1.PublicRuleSpec
 		want bool
 	}{
-		{"valid DROP/country", pangolinv1alpha1.PublicRuleSpec{Action: "DROP", Match: "country", Value: "US"}, true},
+		{"valid DROP/country", pangolinv1alpha1.PublicRuleSpec{Action: actionDROP, Match: matchCountry, Value: "US"}, true},
 		{"valid ACCEPT/ip", pangolinv1alpha1.PublicRuleSpec{Action: "ACCEPT", Match: "ip", Value: "1.2.3.4"}, true},
 		{"valid PASS/cidr", pangolinv1alpha1.PublicRuleSpec{Action: "PASS", Match: "cidr", Value: "10.0.0.0/8"}, true},
-		{"valid with priority", pangolinv1alpha1.PublicRuleSpec{Action: "DROP", Match: "country", Value: "US", Priority: 100}, true},
+		{"valid with priority", pangolinv1alpha1.PublicRuleSpec{Action: actionDROP, Match: matchCountry, Value: "US", Priority: 100}, true},
 		{"invalid action", pangolinv1alpha1.PublicRuleSpec{Action: "block", Match: "ip", Value: "1.2.3.4"}, false},
-		{"invalid match", pangolinv1alpha1.PublicRuleSpec{Action: "DROP", Match: "asn", Value: "12345"}, false},
-		{"missing value", pangolinv1alpha1.PublicRuleSpec{Action: "DROP", Match: "country"}, false},
-		{"priority zero (unset)", pangolinv1alpha1.PublicRuleSpec{Action: "DROP", Match: "ip", Value: "1.1.1.1", Priority: 0}, true},
-		{"priority out of range", pangolinv1alpha1.PublicRuleSpec{Action: "DROP", Match: "ip", Value: "1.1.1.1", Priority: 1001}, false},
+		{"invalid match", pangolinv1alpha1.PublicRuleSpec{Action: actionDROP, Match: "asn", Value: "12345"}, false},
+		{"missing value", pangolinv1alpha1.PublicRuleSpec{Action: actionDROP, Match: matchCountry}, false},
+		{"priority zero (unset)", pangolinv1alpha1.PublicRuleSpec{Action: actionDROP, Match: "ip", Value: "1.1.1.1", Priority: 0}, true},
+		{"priority out of range", pangolinv1alpha1.PublicRuleSpec{Action: actionDROP, Match: "ip", Value: "1.1.1.1", Priority: 1001}, false},
 	}
 	for _, tt := range tests {
 		if got := isValidRule(tt.rule); got != tt.want {
@@ -232,7 +247,7 @@ func TestBuildMaintenance_AbsentOrDisabled(t *testing.T) {
 	if buildMaintenance(map[string]string{}, "pangolin-operator") != nil {
 		t.Error("expected nil when annotation absent")
 	}
-	ann := map[string]string{"pangolin-operator/maintenance-enabled": "false"}
+	ann := map[string]string{"pangolin-operator/maintenance-enabled": boolFalse}
 	if buildMaintenance(ann, "pangolin-operator") != nil {
 		t.Error("expected nil when explicitly disabled")
 	}
@@ -240,7 +255,7 @@ func TestBuildMaintenance_AbsentOrDisabled(t *testing.T) {
 
 func TestBuildMaintenance_Enabled(t *testing.T) {
 	ann := map[string]string{
-		"pangolin-operator/maintenance-enabled":        "true",
+		"pangolin-operator/maintenance-enabled":        boolTrue,
 		"pangolin-operator/maintenance-type":           "forced",
 		"pangolin-operator/maintenance-title":          "Down for maintenance",
 		"pangolin-operator/maintenance-message":        "Back soon",
@@ -280,15 +295,15 @@ func TestBuildAuth_SecretRef(t *testing.T) {
 
 func TestBuildAuth_SSO_DefaultsFromCfg(t *testing.T) {
 	cfg := &pangolinv1alpha1.AutoDiscoverSpec{
-		AuthSSORoles: "admin",
+		AuthSSORoles: testRoleAdmin,
 		AuthSSOUsers: "owner@example.com",
 		AuthSSOIDP:   5,
 	}
-	got := buildAuth(map[string]string{"pangolin-operator/auth-sso": "true"}, DefaultAnnotationPrefix, cfg)
+	got := buildAuth(map[string]string{"pangolin-operator/auth-sso": boolTrue}, DefaultAnnotationPrefix, cfg)
 	if got == nil || !got.SsoEnabled {
 		t.Fatal("expected SSO enabled")
 	}
-	if len(got.SsoRoles) != 1 || got.SsoRoles[0] != "admin" {
+	if len(got.SsoRoles) != 1 || got.SsoRoles[0] != testRoleAdmin {
 		t.Errorf("unexpected SSO roles: %v", got.SsoRoles)
 	}
 	if got.AutoLoginIdp != 5 {
@@ -297,9 +312,9 @@ func TestBuildAuth_SSO_DefaultsFromCfg(t *testing.T) {
 }
 
 func TestBuildAuth_SSO_AnnotationOverridesCfg(t *testing.T) {
-	cfg := &pangolinv1alpha1.AutoDiscoverSpec{AuthSSORoles: "admin", AuthSSOIDP: 5}
+	cfg := &pangolinv1alpha1.AutoDiscoverSpec{AuthSSORoles: testRoleAdmin, AuthSSOIDP: 5}
 	ann := map[string]string{
-		"pangolin-operator/auth-sso":       "true",
+		"pangolin-operator/auth-sso":       boolTrue,
 		"pangolin-operator/auth-sso-roles": "editor",
 		"pangolin-operator/auth-sso-idp":   "7",
 	}
@@ -322,12 +337,12 @@ func TestBuildTargetExtras_AllFields(t *testing.T) {
 		"pangolin-operator/target-path":          "/api",
 		"pangolin-operator/target-path-match":    testPathMatch,
 		"pangolin-operator/target-rewrite-path":  "/",
-		"pangolin-operator/target-rewrite-match": "stripPrefix",
+		"pangolin-operator/target-rewrite-match": rewriteStripPrefix,
 		"pangolin-operator/target-priority":      "10",
-		"pangolin-operator/target-enabled":       "true",
+		"pangolin-operator/target-enabled":       boolTrue,
 	}
 	got := buildTargetExtras(pangolinv1alpha1.PublicTargetSpec{}, ann, "pangolin-operator")
-	if got.Path != "/api" || got.PathMatchType != testPathMatch || got.RewritePath != "/" || got.RewritePathType != "stripPrefix" {
+	if got.Path != "/api" || got.PathMatchType != testPathMatch || got.RewritePath != "/" || got.RewritePathType != rewriteStripPrefix {
 		t.Errorf("unexpected path/rewrite fields: %+v", got)
 	}
 	if got.Priority != 10 {
@@ -352,7 +367,7 @@ func TestBuildTargetExtras_InvalidValuesIgnored(t *testing.T) {
 func TestRouteReferencesGateway(t *testing.T) {
 	ns := gatewayv1.Namespace("infra")
 	route := newHTTPRoute([]gatewayv1.ParentReference{
-		{Name: "my-gateway", Namespace: &ns},
+		{Name: testMyGateway, Namespace: &ns},
 	})
 
 	tests := []struct {
@@ -360,9 +375,9 @@ func TestRouteReferencesGateway(t *testing.T) {
 		gatewayNS   string
 		want        bool
 	}{
-		{"my-gateway", "", true},
-		{"my-gateway", "infra", true},
-		{"my-gateway", "other-ns", false},
+		{testMyGateway, "", true},
+		{testMyGateway, "infra", true},
+		{testMyGateway, "other-ns", false},
 		{"other-gateway", "", false},
 	}
 	for _, tt := range tests {
@@ -374,13 +389,13 @@ func TestRouteReferencesGateway(t *testing.T) {
 
 func TestRouteReferencesGateway_NoParentRefs(t *testing.T) {
 	route := newHTTPRoute(nil)
-	if RouteReferencesGateway(route, "my-gateway", "") {
+	if RouteReferencesGateway(route, testMyGateway, "") {
 		t.Error("expected false for route with no parentRefs")
 	}
 }
 
 func TestHostnameToResourceName(t *testing.T) {
-	if got := HostnameToResourceName("my-route", testHostname); got != "my-route-app-example-com" {
+	if got := HostnameToResourceName(testRouteName, testHostname); got != "my-route-app-example-com" {
 		t.Errorf("unexpected resource name: %q", got)
 	}
 }
@@ -465,11 +480,11 @@ func TestBuildHTTPRouteSpec_BackendRefNoNamespace(t *testing.T) {
 func TestBuildHTTPRouteSpec_Defaults(t *testing.T) {
 	port := gatewayv1.PortNumber(8080)
 	route := newHTTPRouteWithBackendRef("my-svc", testNamespace, &port)
-	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{"pangolin-operator/site-ref": testSiteRef}, defaultCfg(), "")
+	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{testSiteRefAnn: testSiteRef}, defaultCfg(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if spec.SiteRef != testSiteRef || spec.FullDomain != testHostname || spec.Protocol != methodHTTP || spec.Name != "my-route" {
+	if spec.SiteRef != testSiteRef || spec.FullDomain != testHostname || spec.Protocol != methodHTTP || spec.Name != testRouteName {
 		t.Errorf("unexpected base fields: %+v", spec)
 	}
 	if len(spec.Targets) != 1 || spec.Targets[0].Port != 8080 || spec.Targets[0].Method != methodHTTP {
@@ -486,12 +501,12 @@ func TestBuildHTTPRouteSpec_Defaults(t *testing.T) {
 func TestBuildHTTPRouteSpec_MethodAnnotationOverride(t *testing.T) {
 	port := gatewayv1.PortNumber(8080)
 	route := newHTTPRouteWithBackendRef("my-svc", testNamespace, &port)
-	ann := map[string]string{"pangolin-operator/site-ref": testSiteRef, "pangolin-operator/method": "https"}
+	ann := map[string]string{testSiteRefAnn: testSiteRef, testMethodAnn: methodHTTPS}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, ann, defaultCfg(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if spec.Targets[0].Method != "https" {
+	if spec.Targets[0].Method != methodHTTPS {
 		t.Errorf("expected method=https from annotation, got %q", spec.Targets[0].Method)
 	}
 }
@@ -499,7 +514,7 @@ func TestBuildHTTPRouteSpec_MethodAnnotationOverride(t *testing.T) {
 func TestBuildHTTPRouteSpec_InvalidMethodFallsBackToDefault(t *testing.T) {
 	port := gatewayv1.PortNumber(8080)
 	route := newHTTPRouteWithBackendRef("my-svc", testNamespace, &port)
-	ann := map[string]string{"pangolin-operator/site-ref": testSiteRef, "pangolin-operator/method": "grpc"}
+	ann := map[string]string{testSiteRefAnn: testSiteRef, testMethodAnn: testInvalidMethod}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, ann, defaultCfg(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -513,8 +528,8 @@ func TestBuildHTTPRouteSpec_CustomName(t *testing.T) {
 	port := gatewayv1.PortNumber(8080)
 	route := newHTTPRouteWithBackendRef("my-svc", testNamespace, &port)
 	ann := map[string]string{
-		"pangolin-operator/site-ref": testSiteRef,
-		"pangolin-operator/name":     "My App",
+		testSiteRefAnn:           testSiteRef,
+		"pangolin-operator/name": "My App",
 	}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, ann, defaultCfg(), "")
 	if err != nil {
@@ -528,7 +543,7 @@ func TestBuildHTTPRouteSpec_CustomName(t *testing.T) {
 func TestBuildHTTPRouteSpec_SSLFromCfg(t *testing.T) {
 	port := gatewayv1.PortNumber(8080)
 	route := newHTTPRouteWithBackendRef("my-svc", testNamespace, &port)
-	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{"pangolin-operator/site-ref": testSiteRef}, &pangolinv1alpha1.AutoDiscoverSpec{SSL: true}, "")
+	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{testSiteRefAnn: testSiteRef}, &pangolinv1alpha1.AutoDiscoverSpec{SSL: true}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -540,7 +555,7 @@ func TestBuildHTTPRouteSpec_SSLFromCfg(t *testing.T) {
 func TestBuildHTTPRouteSpec_SSLAnnotationOverridesCfg(t *testing.T) {
 	port := gatewayv1.PortNumber(8080)
 	route := newHTTPRouteWithBackendRef("my-svc", testNamespace, &port)
-	ann := map[string]string{"pangolin-operator/site-ref": testSiteRef, "pangolin-operator/ssl": "false"}
+	ann := map[string]string{testSiteRefAnn: testSiteRef, "pangolin-operator/ssl": boolFalse}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, ann, &pangolinv1alpha1.AutoDiscoverSpec{SSL: true}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -553,7 +568,7 @@ func TestBuildHTTPRouteSpec_SSLAnnotationOverridesCfg(t *testing.T) {
 func TestBuildHTTPRouteSpec_EnabledAnnotation(t *testing.T) {
 	port := gatewayv1.PortNumber(8080)
 	route := newHTTPRouteWithBackendRef("my-svc", testNamespace, &port)
-	ann := map[string]string{"pangolin-operator/site-ref": testSiteRef, "pangolin-operator/enabled": "false"}
+	ann := map[string]string{testSiteRefAnn: testSiteRef, testEnabledAnn: boolFalse}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, ann, defaultCfg(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -577,8 +592,8 @@ func TestBuildHTTPRouteSpec_CustomPrefix(t *testing.T) {
 
 func TestBuildHTTPRouteSpec_GatewayMode_MissingNamespace(t *testing.T) {
 	// GatewayName set but no GatewayNamespace and no explicit GatewayTargetHostname — must error.
-	route := newHTTPRoute([]gatewayv1.ParentReference{{Name: "envoy-external"}})
-	cfg := &pangolinv1alpha1.AutoDiscoverSpec{GatewayName: "envoy-external"}
+	route := newHTTPRoute([]gatewayv1.ParentReference{{Name: testGatewayName}})
+	cfg := &pangolinv1alpha1.AutoDiscoverSpec{GatewayName: testGatewayName}
 	if _, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{}, cfg, "homelab"); err == nil {
 		t.Error("expected error when GatewayNamespace is empty and GatewayTargetHostname is not set")
 	}
@@ -588,14 +603,14 @@ func TestBuildHTTPRouteSpec_GatewayMode_DerivedHostname(t *testing.T) {
 	// When GatewayTargetHostname is empty, derive from GatewayName + GatewayNamespace.
 	route := newHTTPRoute(nil)
 	cfg := &pangolinv1alpha1.AutoDiscoverSpec{
-		GatewayName:      "envoy-external",
-		GatewayNamespace: "network",
+		GatewayName:      testGatewayName,
+		GatewayNamespace: testGatewayNS,
 	}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{}, cfg, "homelab")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if spec.Targets[0].Hostname != "envoy-external.network.svc.cluster.local" {
+	if spec.Targets[0].Hostname != testGatewayHost {
 		t.Errorf("expected derived hostname, got %q", spec.Targets[0].Hostname)
 	}
 }
@@ -604,8 +619,8 @@ func TestBuildHTTPRouteSpec_GatewayMode_ExplicitHostnameOverridesDerived(t *test
 	// Explicit GatewayTargetHostname takes precedence over derived hostname.
 	route := newHTTPRoute(nil)
 	cfg := &pangolinv1alpha1.AutoDiscoverSpec{
-		GatewayName:           "envoy-external",
-		GatewayNamespace:      "network",
+		GatewayName:           testGatewayName,
+		GatewayNamespace:      testGatewayNS,
 		GatewayTargetHostname: "custom-gateway.infra.svc.cluster.local",
 	}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{}, cfg, "homelab")
@@ -622,10 +637,10 @@ func TestBuildHTTPRouteSpec_GatewayMode_UsesGatewayTarget(t *testing.T) {
 	port := gatewayv1.PortNumber(3000)
 	route := newHTTPRouteWithBackendRef("my-backend", testNamespace, &port)
 	cfg := &pangolinv1alpha1.AutoDiscoverSpec{
-		GatewayName:           "envoy-external",
-		GatewayTargetHostname: "envoy-external.network.svc.cluster.local",
+		GatewayName:           testGatewayName,
+		GatewayTargetHostname: testGatewayHost,
 		GatewayTargetPort:     443,
-		GatewayTargetMethod:   "https",
+		GatewayTargetMethod:   methodHTTPS,
 	}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{}, cfg, "homelab")
 	if err != nil {
@@ -634,13 +649,13 @@ func TestBuildHTTPRouteSpec_GatewayMode_UsesGatewayTarget(t *testing.T) {
 	if len(spec.Targets) != 1 {
 		t.Fatalf("expected 1 target, got %d", len(spec.Targets))
 	}
-	if spec.Targets[0].Hostname != "envoy-external.network.svc.cluster.local" {
+	if spec.Targets[0].Hostname != testGatewayHost {
 		t.Errorf("expected gateway hostname, got %q", spec.Targets[0].Hostname)
 	}
 	if spec.Targets[0].Port != 443 {
 		t.Errorf("expected gateway port 443, got %d", spec.Targets[0].Port)
 	}
-	if spec.Targets[0].Method != "https" {
+	if spec.Targets[0].Method != methodHTTPS {
 		t.Errorf("expected method=https, got %q", spec.Targets[0].Method)
 	}
 }
@@ -649,8 +664,8 @@ func TestBuildHTTPRouteSpec_GatewayMode_DefaultPortAndMethod(t *testing.T) {
 	// When GatewayTargetPort and GatewayTargetMethod are zero/empty, defaults apply.
 	route := newHTTPRoute(nil)
 	cfg := &pangolinv1alpha1.AutoDiscoverSpec{
-		GatewayName:      "envoy-external",
-		GatewayNamespace: "network",
+		GatewayName:      testGatewayName,
+		GatewayNamespace: testGatewayNS,
 		// GatewayTargetPort and GatewayTargetMethod intentionally unset
 	}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, map[string]string{}, cfg, "homelab")
@@ -669,16 +684,16 @@ func TestBuildHTTPRouteSpec_GatewayMode_MethodAnnotationOverride(t *testing.T) {
 	// Per-annotation /method should override GatewayTargetMethod.
 	route := newHTTPRoute(nil)
 	cfg := &pangolinv1alpha1.AutoDiscoverSpec{
-		GatewayName:           "envoy-external",
-		GatewayTargetHostname: "envoy-external.network.svc.cluster.local",
-		GatewayTargetMethod:   "https",
+		GatewayName:           testGatewayName,
+		GatewayTargetHostname: testGatewayHost,
+		GatewayTargetMethod:   methodHTTPS,
 	}
-	ann := map[string]string{"pangolin-operator/method": "http"}
+	ann := map[string]string{testMethodAnn: methodHTTP}
 	spec, err := BuildHTTPRouteSpec(route, testHostname, ann, cfg, "homelab")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if spec.Targets[0].Method != "http" {
+	if spec.Targets[0].Method != methodHTTP {
 		t.Errorf("expected annotation to override method, got %q", spec.Targets[0].Method)
 	}
 }
@@ -691,8 +706,8 @@ func TestResolveAllPorts(t *testing.T) {
 		want bool
 	}{
 		{"cfg true, no annotation", map[string]string{}, &pangolinv1alpha1.AutoDiscoverSpec{AllPorts: true}, true},
-		{"cfg true, annotation false", map[string]string{"pangolin-operator/all-ports": "false"}, &pangolinv1alpha1.AutoDiscoverSpec{AllPorts: true}, false},
-		{"cfg false, annotation true", map[string]string{"pangolin-operator/all-ports": "true"}, &pangolinv1alpha1.AutoDiscoverSpec{AllPorts: false}, true},
+		{"cfg true, annotation false", map[string]string{"pangolin-operator/all-ports": boolFalse}, &pangolinv1alpha1.AutoDiscoverSpec{AllPorts: true}, false},
+		{"cfg false, annotation true", map[string]string{"pangolin-operator/all-ports": boolTrue}, &pangolinv1alpha1.AutoDiscoverSpec{AllPorts: false}, true},
 	}
 	for _, tt := range tests {
 		if got := ResolveAllPorts(tt.ann, "pangolin-operator", tt.cfg); got != tt.want {
@@ -709,8 +724,8 @@ func TestBuildAllPortSpecs_NoPorts(t *testing.T) {
 
 func TestBuildAllPortSpecs_MultiplePorts(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
-		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
+		{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP},
+		{Name: testPortMetrics, Port: 9090, Protocol: corev1.ProtocolTCP},
 	})
 	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "cluster.local")
 	if len(out) != 2 {
@@ -742,15 +757,15 @@ func TestBuildAllPortSpecs_UDP(t *testing.T) {
 		{Name: "dns", Port: 53, Protocol: corev1.ProtocolUDP},
 	})
 	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
-	key := ServiceResourceName(testNamespace, "my-svc", "53", "udp")
+	key := ServiceResourceName(testNamespace, "my-svc", "53", protocolUDP)
 	if _, ok := out[key]; !ok {
 		t.Errorf("expected UDP key %q, got: %v", key, mapKeys(out))
 	}
 }
 
 func TestBuildSinglePortSpec_NoMatchingPort(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "grpc", Port: 9000}})
-	_, _, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "8080"}, defaultCfg(), testSiteRef, "host")
+	svc := newService([]corev1.ServicePort{{Name: testInvalidMethod, Port: 9000}})
+	_, _, ok := BuildSinglePortSpec(svc, map[string]string{testPortAnn: "8080"}, defaultCfg(), testSiteRef, "host")
 	if ok {
 		t.Error("expected ok=false when no port matches annotation")
 	}
@@ -758,7 +773,7 @@ func TestBuildSinglePortSpec_NoMatchingPort(t *testing.T) {
 
 func TestBuildSinglePortSpec_SinglePort(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "grpc", Port: 9000, Protocol: corev1.ProtocolTCP},
+		{Name: testInvalidMethod, Port: 9000, Protocol: corev1.ProtocolTCP},
 	})
 	resName, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if !ok {
@@ -774,8 +789,8 @@ func TestBuildSinglePortSpec_SinglePort(t *testing.T) {
 
 func TestBuildSinglePortSpec_SelectsHTTPPortByName(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
-		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
+		{Name: testPortMetrics, Port: 9090, Protocol: corev1.ProtocolTCP},
+		{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP},
 	})
 	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if !ok || spec.ProxyPort != 80 {
@@ -785,10 +800,10 @@ func TestBuildSinglePortSpec_SelectsHTTPPortByName(t *testing.T) {
 
 func TestBuildSinglePortSpec_SelectsByName(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
-		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
+		{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP},
+		{Name: testPortMetrics, Port: 9090, Protocol: corev1.ProtocolTCP},
 	})
-	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "metrics"}, defaultCfg(), testSiteRef, "host")
+	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{testPortAnn: testPortMetrics}, defaultCfg(), testSiteRef, "host")
 	if !ok || spec.ProxyPort != 9090 {
 		t.Errorf("expected port 9090 selected by name, got: ok=%v spec=%+v", ok, spec)
 	}
@@ -796,10 +811,10 @@ func TestBuildSinglePortSpec_SelectsByName(t *testing.T) {
 
 func TestBuildSinglePortSpec_SelectsByNumber(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
-		{Name: "metrics", Port: 9090, Protocol: corev1.ProtocolTCP},
+		{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP},
+		{Name: testPortMetrics, Port: 9090, Protocol: corev1.ProtocolTCP},
 	})
-	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{"pangolin-operator/port": "9090"}, defaultCfg(), testSiteRef, "host")
+	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{testPortAnn: "9090"}, defaultCfg(), testSiteRef, "host")
 	if !ok || spec.ProxyPort != 9090 {
 		t.Errorf("expected port 9090 selected by number, got: ok=%v spec=%+v", ok, spec)
 	}
@@ -807,14 +822,14 @@ func TestBuildSinglePortSpec_SelectsByNumber(t *testing.T) {
 
 func TestBuildSinglePortSpec_FullDomain(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
+		{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP},
 	})
-	ann := map[string]string{"pangolin-operator/full-domain": testHostname}
+	ann := map[string]string{testFullDomainAnn: testHostname}
 	resName, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
-	if spec.FullDomain != testHostname || spec.Protocol != "http" || spec.Targets[0].Hostname != "cluster.local" {
+	if spec.FullDomain != testHostname || spec.Protocol != methodHTTP || spec.Targets[0].Hostname != "cluster.local" {
 		t.Errorf("unexpected spec: %+v", spec)
 	}
 	if resName != HostnameToResourceName("my-svc", testHostname) {
@@ -824,11 +839,11 @@ func TestBuildSinglePortSpec_FullDomain(t *testing.T) {
 
 func TestBuildSinglePortSpec_FullDomain_MethodHTTPS(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "http", Port: 443, Protocol: corev1.ProtocolTCP},
+		{Name: methodHTTP, Port: 443, Protocol: corev1.ProtocolTCP},
 	})
 	ann := map[string]string{
-		"pangolin-operator/full-domain": testHostname,
-		"pangolin-operator/method":      methodHTTPS,
+		testFullDomainAnn: testHostname,
+		testMethodAnn:     methodHTTPS,
 	}
 	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
 	if !ok || spec.Targets[0].Method != methodHTTPS {
@@ -838,8 +853,8 @@ func TestBuildSinglePortSpec_FullDomain_MethodHTTPS(t *testing.T) {
 
 func TestBuildSinglePortSpec_AmbiguousMultiPort(t *testing.T) {
 	svc := newService([]corev1.ServicePort{
-		{Name: "grpc", Port: 9000},
-		{Name: "metrics", Port: 9090},
+		{Name: testInvalidMethod, Port: 9000},
+		{Name: testPortMetrics, Port: 9090},
 	})
 	_, _, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if ok {
@@ -848,8 +863,8 @@ func TestBuildSinglePortSpec_AmbiguousMultiPort(t *testing.T) {
 }
 
 func TestBuildSinglePortSpec_EnabledAnnotation(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
-	ann := map[string]string{"pangolin-operator/enabled": "false"}
+	svc := newService([]corev1.ServicePort{{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{testEnabledAnn: boolFalse}
 	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "host")
 	if !ok {
 		t.Fatal("expected ok=true")
@@ -860,10 +875,10 @@ func TestBuildSinglePortSpec_EnabledAnnotation(t *testing.T) {
 }
 
 func TestBuildSinglePortSpec_FullDomain_EnabledAnnotation(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	svc := newService([]corev1.ServicePort{{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP}})
 	ann := map[string]string{
-		"pangolin-operator/full-domain": testHostname,
-		"pangolin-operator/enabled":     "false",
+		testFullDomainAnn: testHostname,
+		testEnabledAnn:    boolFalse,
 	}
 	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
 	if !ok {
@@ -875,8 +890,8 @@ func TestBuildSinglePortSpec_FullDomain_EnabledAnnotation(t *testing.T) {
 }
 
 func TestBuildAllPortSpecs_EnabledAnnotation(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
-	ann := map[string]string{"pangolin-operator/enabled": "false"}
+	svc := newService([]corev1.ServicePort{{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{testEnabledAnn: boolFalse}
 	out := BuildAllPortSpecs(svc, ann, defaultCfg(), testSiteRef, "host")
 	key := ServiceResourceName(testNamespace, "my-svc", "80", testProtocolTCP)
 	spec, ok := out[key]
@@ -889,7 +904,7 @@ func TestBuildAllPortSpecs_EnabledAnnotation(t *testing.T) {
 }
 
 func TestBuildSinglePortSpec_DefaultEnabledTrue(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	svc := newService([]corev1.ServicePort{{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP}})
 	_, spec, ok := BuildSinglePortSpec(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	if !ok {
 		t.Fatal("expected ok=true")
@@ -900,8 +915,8 @@ func TestBuildSinglePortSpec_DefaultEnabledTrue(t *testing.T) {
 }
 
 func TestBuildSinglePortSpec_FullDomain_DefaultEnabledTrue(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
-	ann := map[string]string{"pangolin-operator/full-domain": testHostname}
+	svc := newService([]corev1.ServicePort{{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{testFullDomainAnn: testHostname}
 	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "cluster.local")
 	if !ok {
 		t.Fatal("expected ok=true")
@@ -912,8 +927,8 @@ func TestBuildSinglePortSpec_FullDomain_DefaultEnabledTrue(t *testing.T) {
 }
 
 func TestBuildSinglePortSpec_EnabledAnnotationTrue(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
-	ann := map[string]string{"pangolin-operator/enabled": "true"}
+	svc := newService([]corev1.ServicePort{{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP}})
+	ann := map[string]string{testEnabledAnn: boolTrue}
 	_, spec, ok := BuildSinglePortSpec(svc, ann, defaultCfg(), testSiteRef, "host")
 	if !ok {
 		t.Fatal("expected ok=true")
@@ -924,7 +939,7 @@ func TestBuildSinglePortSpec_EnabledAnnotationTrue(t *testing.T) {
 }
 
 func TestBuildAllPortSpecs_DefaultEnabledTrue(t *testing.T) {
-	svc := newService([]corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}})
+	svc := newService([]corev1.ServicePort{{Name: methodHTTP, Port: 80, Protocol: corev1.ProtocolTCP}})
 	out := BuildAllPortSpecs(svc, map[string]string{}, defaultCfg(), testSiteRef, "host")
 	key := ServiceResourceName(testNamespace, "my-svc", "80", testProtocolTCP)
 	spec, ok := out[key]
@@ -941,9 +956,9 @@ func TestServiceProtocol(t *testing.T) {
 		proto corev1.Protocol
 		want  string
 	}{
-		{corev1.ProtocolTCP, "tcp"},
-		{corev1.ProtocolUDP, "udp"},
-		{corev1.ProtocolSCTP, "tcp"},
+		{corev1.ProtocolTCP, testProtocolTCP},
+		{corev1.ProtocolUDP, protocolUDP},
+		{corev1.ProtocolSCTP, testProtocolTCP},
 	}
 	for _, tt := range tests {
 		if got := serviceProtocol(tt.proto); got != tt.want {
@@ -959,7 +974,7 @@ func newTCPRouteWithBackendRef(svcName, namespace string, port *gatewayv1.PortNu
 		ns = &n
 	}
 	return &gatewayv1alpha2.TCPRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-tcp-route", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testTCPRouteName, Namespace: testNamespace},
 		Spec: gatewayv1alpha2.TCPRouteSpec{
 			Rules: []gatewayv1alpha2.TCPRouteRule{
 				{
@@ -980,7 +995,7 @@ func newTCPRouteWithBackendRef(svcName, namespace string, port *gatewayv1.PortNu
 
 func newTCPRoute(parentRefs []gatewayv1.ParentReference) *gatewayv1alpha2.TCPRoute {
 	return &gatewayv1alpha2.TCPRoute{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-tcp-route", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testTCPRouteName, Namespace: testNamespace},
 		Spec: gatewayv1alpha2.TCPRouteSpec{
 			CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: parentRefs},
 		},
@@ -990,7 +1005,7 @@ func newTCPRoute(parentRefs []gatewayv1.ParentReference) *gatewayv1alpha2.TCPRou
 func TestTCPRouteReferencesGateway(t *testing.T) {
 	ns := gatewayv1.Namespace("infra")
 	route := newTCPRoute([]gatewayv1.ParentReference{
-		{Name: "my-gateway", Namespace: &ns},
+		{Name: testMyGateway, Namespace: &ns},
 	})
 
 	tests := []struct {
@@ -998,9 +1013,9 @@ func TestTCPRouteReferencesGateway(t *testing.T) {
 		gatewayNS   string
 		want        bool
 	}{
-		{"my-gateway", "", true},
-		{"my-gateway", "infra", true},
-		{"my-gateway", "other-ns", false},
+		{testMyGateway, "", true},
+		{testMyGateway, "infra", true},
+		{testMyGateway, "other-ns", false},
 		{"other-gateway", "", false},
 	}
 	for _, tt := range tests {
@@ -1012,7 +1027,7 @@ func TestTCPRouteReferencesGateway(t *testing.T) {
 
 func TestTCPRouteReferencesGateway_NoParentRefs(t *testing.T) {
 	route := newTCPRoute(nil)
-	if TCPRouteReferencesGateway(route, "my-gateway", "") {
+	if TCPRouteReferencesGateway(route, testMyGateway, "") {
 		t.Error("expected false for route with no parentRefs")
 	}
 }
@@ -1047,7 +1062,7 @@ func TestBuildTCPRouteSpec_SiteRefFromFallback(t *testing.T) {
 func TestBuildTCPRouteSpec_Defaults(t *testing.T) {
 	port := gatewayv1.PortNumber(5432)
 	route := newTCPRouteWithBackendRef("postgres", "db", &port)
-	ann := map[string]string{"pangolin-operator/site-ref": testSiteRef}
+	ann := map[string]string{testSiteRefAnn: testSiteRef}
 	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1061,7 +1076,7 @@ func TestBuildTCPRouteSpec_Defaults(t *testing.T) {
 	if spec.ProxyPort != 5432 {
 		t.Errorf("expected ProxyPort=5432, got %d", spec.ProxyPort)
 	}
-	if spec.Name != "my-tcp-route" {
+	if spec.Name != testTCPRouteName {
 		t.Errorf("expected Name=my-tcp-route, got %q", spec.Name)
 	}
 	if len(spec.Targets) != 1 {
@@ -1094,7 +1109,7 @@ func TestBuildTCPRouteSpec_ProxyPortAnnotation(t *testing.T) {
 	port := gatewayv1.PortNumber(5432)
 	route := newTCPRouteWithBackendRef("postgres", "db", &port)
 	ann := map[string]string{
-		"pangolin-operator/site-ref":   testSiteRef,
+		testSiteRefAnn:                 testSiteRef,
 		"pangolin-operator/proxy-port": "15432",
 	}
 	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
@@ -1113,8 +1128,8 @@ func TestBuildTCPRouteSpec_CustomName(t *testing.T) {
 	port := gatewayv1.PortNumber(5432)
 	route := newTCPRouteWithBackendRef("postgres", "db", &port)
 	ann := map[string]string{
-		"pangolin-operator/site-ref": testSiteRef,
-		"pangolin-operator/name":     "My Database",
+		testSiteRefAnn:           testSiteRef,
+		"pangolin-operator/name": "My Database",
 	}
 	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
 	if err != nil {
@@ -1129,8 +1144,8 @@ func TestBuildTCPRouteSpec_EnabledAnnotation(t *testing.T) {
 	port := gatewayv1.PortNumber(5432)
 	route := newTCPRouteWithBackendRef("postgres", "db", &port)
 	ann := map[string]string{
-		"pangolin-operator/site-ref": testSiteRef,
-		"pangolin-operator/enabled":  "false",
+		testSiteRefAnn: testSiteRef,
+		testEnabledAnn: boolFalse,
 	}
 	spec, err := BuildTCPRouteSpec(route, ann, defaultCfg(), "")
 	if err != nil {

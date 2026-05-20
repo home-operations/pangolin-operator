@@ -9,24 +9,24 @@ func TestClassifyEndpoint(t *testing.T) {
 	}{
 		// Sites
 		{"https://pangolin.example.com/v1/org/org1/pick-site-defaults", "site_defaults"},
-		{"https://pangolin.example.com/v1/org/org1/site", "site"},
-		{"https://pangolin.example.com/v1/site/42", "site"},
+		{"https://pangolin.example.com/v1/org/org1/site", endpointSite},
+		{"https://pangolin.example.com/v1/site/42", endpointSite},
 
 		// Resources
-		{"https://pangolin.example.com/v1/org/org1/resource", "resource"},
-		{"https://pangolin.example.com/v1/resource/7", "resource"},
+		{"https://pangolin.example.com/v1/org/org1/resource", endpointResource},
+		{"https://pangolin.example.com/v1/resource/7", endpointResource},
 
 		// Targets (direct and sub-resource)
-		{"https://pangolin.example.com/v1/resource/7/target", "target"},
-		{"https://pangolin.example.com/v1/target/99", "target"},
+		{"https://pangolin.example.com/v1/resource/7/target", endpointTarget},
+		{"https://pangolin.example.com/v1/target/99", endpointTarget},
 
 		// Rules (direct and sub-resource)
-		{"https://pangolin.example.com/v1/resource/7/rule", "rule"},
-		{"https://pangolin.example.com/v1/rule/55", "rule"},
+		{"https://pangolin.example.com/v1/resource/7/rule", endpointRule},
+		{"https://pangolin.example.com/v1/rule/55", endpointRule},
 
 		// Site resources
-		{"https://pangolin.example.com/v1/org/org1/site-resource", "site_resource"},
-		{"https://pangolin.example.com/v1/site-resource/12", "site_resource"},
+		{"https://pangolin.example.com/v1/org/org1/site-resource", endpointSiteResource},
+		{"https://pangolin.example.com/v1/site-resource/12", endpointSiteResource},
 
 		// Domains
 		{"https://pangolin.example.com/v1/org/org1/domains", "domain"},
