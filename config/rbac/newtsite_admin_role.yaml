@@ -19,7 +19,7 @@ rules:
     resources:
       - newtsites
     verbs:
-      - '*'
+      - "*"
   - apiGroups:
       - pangolin.home-operations.com
     resources:

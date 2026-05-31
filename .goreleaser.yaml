@@ -34,7 +34,7 @@ archives:
       - pangolin-operator
     format_overrides:
       - goos: windows
-        formats: ['zip']
+        formats: ["zip"]
 
 upx:
   - enabled: true

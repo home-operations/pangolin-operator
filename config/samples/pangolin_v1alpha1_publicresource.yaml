@@ -26,7 +26,7 @@ spec:
   protocol: http
   fullDomain: "*.apps.example.com"
   ssl: true
-  hostHeader: ""    # leave unset to preserve the original Host header
+  hostHeader: "" # leave unset to preserve the original Host header
   targets:
     - hostname: ingress.default.svc.cluster.local
       port: 80

@@ -24,11 +24,11 @@ The operator calls the Pangolin REST API directly. No blueprint files, no sideca
 
 ## CRDs
 
-| Kind | Short name | Description |
-|---|---|---|
-| `NewtSite` | `nsite` | Pangolin site + newt tunnel Deployment |
-| `PublicResource` | `pubr` | Pangolin public resource (HTTP, TCP, UDP) |
-| `PrivateResource` | `privr` | Pangolin private/OLM resource |
+| Kind              | Short name | Description                               |
+| ----------------- | ---------- | ----------------------------------------- |
+| `NewtSite`        | `nsite`    | Pangolin site + newt tunnel Deployment    |
+| `PublicResource`  | `pubr`     | Pangolin public resource (HTTP, TCP, UDP) |
+| `PrivateResource` | `privr`    | Pangolin private/OLM resource             |
 
 All CRDs are namespaced and live under `pangolin.home-operations.com/v1alpha1`.
 
@@ -42,7 +42,7 @@ In your Pangolin `config.yml`:
 
 ```yaml
 flags:
-  enable_integration_api: true
+    enable_integration_api: true
 ```
 
 The API listens on port `3003` by default. Expose it via Traefik (or another reverse proxy) so the operator can reach it. The `PANGOLIN_API_URL` environment variable should point to the exposed base URL (e.g. `https://api.example.com`).
@@ -50,6 +50,7 @@ The API listens on port `3003` by default. Expose it via Traefik (or another rev
 See the [Pangolin Integration API docs](https://docs.pangolin.net/self-host/advanced/integration-api) for the full setup including Traefik routing configuration and Swagger UI access.
 
 You will need to create an Org API key with at least the following permissions:
+
 - List Organization Domains
 - All for Sites
 - All for Resources
@@ -60,12 +61,12 @@ You will need to create an Org API key with at least the following permissions:
 
 The operator reads its Pangolin credentials from environment variables:
 
-| Variable | Description |
-|---|---|
-| `PANGOLIN_API_URL` | Pangolin API base URL (e.g. `https://pangolin.example.com`) |
-| `PANGOLIN_API_KEY` | Pangolin API key |
-| `PANGOLIN_ORG_ID` | Pangolin organisation ID |
-| `PANGOLIN_ENDPOINT` | Endpoint passed to newt pods (`PANGOLIN_ENDPOINT` env var) |
+| Variable            | Description                                                 |
+| ------------------- | ----------------------------------------------------------- |
+| `PANGOLIN_API_URL`  | Pangolin API base URL (e.g. `https://pangolin.example.com`) |
+| `PANGOLIN_API_KEY`  | Pangolin API key                                            |
+| `PANGOLIN_ORG_ID`   | Pangolin organisation ID                                    |
+| `PANGOLIN_ENDPOINT` | Endpoint passed to newt pods (`PANGOLIN_ENDPOINT` env var)  |
 
 ## NewtSite
 
@@ -75,35 +76,35 @@ A `NewtSite` provisions a Pangolin site and — unless `type: local` — manages
 apiVersion: pangolin.home-operations.com/v1alpha1
 kind: NewtSite
 metadata:
-  name: homelab
-  namespace: network
+    name: homelab
+    namespace: network
 spec:
-  name: Homelab
-  type: newt          # "newt" (default) or "local"
-  newt:
-    image: ghcr.io/fosrl/newt
-    tag: latest
-    replicas: 1
-    logLevel: INFO    # DEBUG | INFO | WARN | ERROR
-    mtu: 1380         # WireGuard MTU (default: 1280)
-    pingInterval: "60s"   # WireGuard keepalive interval (PING_INTERVAL env)
-    pingTimeout: "5s"     # WireGuard ping timeout (PING_TIMEOUT env)
-    interface: "newt"     # WireGuard interface name (INTERFACE env, default "newt")
-    dns: "1.1.1.1"        # custom DNS pushed into tunnel (DNS env)
-    acceptClients: false  # accept incoming VPN clients (ACCEPT_CLIENTS env)
-    resources:
-      requests:
-        cpu: 10m
-        memory: 32Mi
-  autoDiscover:
-    annotationPrefix: pangolin-operator   # default
-    enableRouteDiscovery: false           # enable HTTPRoute auto-discovery (default: false)
-    enableServiceDiscovery: false         # enable Service auto-discovery (default: false)
-    gatewayName: envoy-gateway            # filter HTTPRoutes by parentRef gateway
-    gatewayNamespace: network
-    gatewayTargetHostname: envoy-external.network.svc.cluster.local  # override target hostname for gateway-based discovery
-    ssl: true              # default SSL for HTTP resources
-    denyCountries: "RU,CN,KP,IR"
+    name: Homelab
+    type: newt # "newt" (default) or "local"
+    newt:
+        image: ghcr.io/fosrl/newt
+        tag: latest
+        replicas: 1
+        logLevel: INFO # DEBUG | INFO | WARN | ERROR
+        mtu: 1380 # WireGuard MTU (default: 1280)
+        pingInterval: "60s" # WireGuard keepalive interval (PING_INTERVAL env)
+        pingTimeout: "5s" # WireGuard ping timeout (PING_TIMEOUT env)
+        interface: "newt" # WireGuard interface name (INTERFACE env, default "newt")
+        dns: "1.1.1.1" # custom DNS pushed into tunnel (DNS env)
+        acceptClients: false # accept incoming VPN clients (ACCEPT_CLIENTS env)
+        resources:
+            requests:
+                cpu: 10m
+                memory: 32Mi
+    autoDiscover:
+        annotationPrefix: pangolin-operator # default
+        enableRouteDiscovery: false # enable HTTPRoute auto-discovery (default: false)
+        enableServiceDiscovery: false # enable Service auto-discovery (default: false)
+        gatewayName: envoy-gateway # filter HTTPRoutes by parentRef gateway
+        gatewayNamespace: network
+        gatewayTargetHostname: envoy-external.network.svc.cluster.local # override target hostname for gateway-based discovery
+        ssl: true # default SSL for HTTP resources
+        denyCountries: "RU,CN,KP,IR"
 ```
 
 The operator auto-creates a `Secret` named `<site>-newt-credentials` containing `PANGOLIN_ENDPOINT`, `NEWT_ID`, and `NEWT_SECRET`. The newt `Deployment` reads credentials from this Secret.
@@ -114,38 +115,38 @@ Set `newt.useNativeInterface: true` to use the kernel WireGuard module instead o
 
 ```yaml
 spec:
-  newt:
-    useNativeInterface: true
-    hostNetwork: true   # optional: grant host network namespace
-    hostPID: false
+    newt:
+        useNativeInterface: true
+        hostNetwork: true # optional: grant host network namespace
+        hostPID: false
 ```
 
 ### Scheduling and placement
 
 ```yaml
 spec:
-  newt:
-    nodeSelector:
-      kubernetes.io/arch: amd64
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
-    affinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: topology.kubernetes.io/zone
-                  operator: In
-                  values: [us-east-1a]
-    topologySpreadConstraints:
-      - maxSkew: 1
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/instance: homelab
+    newt:
+        nodeSelector:
+            kubernetes.io/arch: amd64
+        tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+        affinity:
+            nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                        - matchExpressions:
+                              - key: topology.kubernetes.io/zone
+                                operator: In
+                                values: [us-east-1a]
+        topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                  matchLabels:
+                      app.kubernetes.io/instance: homelab
 ```
 
 ### Metrics
@@ -154,37 +155,37 @@ Set `newt.metrics` to expose a Prometheus metrics endpoint. The operator sets `N
 
 ```yaml
 spec:
-  newt:
-    metrics:
-      port: 2112        # metrics container port (default 9090)
-      # adminAddr: "0.0.0.0:2112"  # override full bind address if needed
+    newt:
+        metrics:
+            port: 2112 # metrics container port (default 9090)
+            # adminAddr: "0.0.0.0:2112"  # override full bind address if needed
 ```
 
 ### Extra environment variables, volumes, and containers
 
 ```yaml
 spec:
-  newt:
-    extraEnv:
-      - name: BLUEPRINT_FILE
-        value: /config/blueprint.json
-      - name: NEWT_METRICS_PROMETHEUS_ENABLED
-        value: "true"
-    extraVolumes:
-      - name: blueprint-config
-        configMap:
-          name: my-blueprint
-    extraVolumeMounts:
-      - name: blueprint-config
-        mountPath: /config
-        readOnly: true
-    initContainers:
-      - name: wait-for-dependency
-        image: busybox:latest
-        command: ["sh", "-c", "until wget -qO- http://dep/health; do sleep 2; done"]
-    extraContainers:
-      - name: sidecar
-        image: my-sidecar:latest
+    newt:
+        extraEnv:
+            - name: BLUEPRINT_FILE
+              value: /config/blueprint.json
+            - name: NEWT_METRICS_PROMETHEUS_ENABLED
+              value: "true"
+        extraVolumes:
+            - name: blueprint-config
+              configMap:
+                  name: my-blueprint
+        extraVolumeMounts:
+            - name: blueprint-config
+              mountPath: /config
+              readOnly: true
+        initContainers:
+            - name: wait-for-dependency
+              image: busybox:latest
+              command: ["sh", "-c", "until wget -qO- http://dep/health; do sleep 2; done"]
+        extraContainers:
+            - name: sidecar
+              image: my-sidecar:latest
 ```
 
 ### Security context overrides
@@ -193,16 +194,16 @@ By default the operator enforces a secure non-root context (or root+privileged f
 
 ```yaml
 spec:
-  newt:
-    podSecurityContext:
-      runAsNonRoot: true
-      seccompProfile:
-        type: RuntimeDefault
-    securityContext:
-      runAsUser: 65534
-      allowPrivilegeEscalation: false
-      capabilities:
-        drop: [ALL]
+    newt:
+        podSecurityContext:
+            runAsNonRoot: true
+            seccompProfile:
+                type: RuntimeDefault
+        securityContext:
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            capabilities:
+                drop: [ALL]
 ```
 
 ## PublicResource
@@ -215,18 +216,18 @@ Manages a Pangolin public resource. The `siteRef` field references a `NewtSite` 
 apiVersion: pangolin.home-operations.com/v1alpha1
 kind: PublicResource
 metadata:
-  name: my-app
-  namespace: default
+    name: my-app
+    namespace: default
 spec:
-  siteRef: homelab
-  name: My App
-  protocol: http
-  fullDomain: app.example.com
-  ssl: true
-  targets:
-    - hostname: my-app.default.svc.cluster.local
-      port: 8080
-      method: http   # http | https | h2c
+    siteRef: homelab
+    name: My App
+    protocol: http
+    fullDomain: app.example.com
+    ssl: true
+    targets:
+        - hostname: my-app.default.svc.cluster.local
+          port: 8080
+          method: http # http | https | h2c
 ```
 
 #### Wildcard subdomains (Pangolin 1.18+)
@@ -235,7 +236,7 @@ Set `fullDomain` to a wildcard like `*.apps.example.com` to route every hostname
 
 ```yaml
 spec:
-  fullDomain: "*.apps.example.com"
+    fullDomain: "*.apps.example.com"
 ```
 
 Wildcards require a TLS certificate that covers `*.apps.example.com`, which means **DNS-01 validation** in your Pangolin/Traefik setup. HTTP-01 only proves a single exact hostname.
@@ -244,25 +245,25 @@ Wildcards require a TLS certificate that covers `*.apps.example.com`, which mean
 
 ```yaml
 spec:
-  siteRef: homelab
-  name: Forgejo SSH
-  protocol: tcp      # tcp | udp
-  proxyPort: 2222
-  targets:
-    - hostname: forgejo.selfhosted.svc.cluster.local
-      port: 22
+    siteRef: homelab
+    name: Forgejo SSH
+    protocol: tcp # tcp | udp
+    proxyPort: 2222
+    targets:
+        - hostname: forgejo.selfhosted.svc.cluster.local
+          port: 22
 ```
 
 ### Auth
 
 ```yaml
 spec:
-  auth:
-    ssoEnabled: true
-    ssoRoles:
-      - Member
-    autoLoginIdp: 1
-    authSecretRef: myapp-auth   # Kubernetes Secret name
+    auth:
+        ssoEnabled: true
+        ssoRoles:
+            - Member
+        autoLoginIdp: 1
+        authSecretRef: myapp-auth # Kubernetes Secret name
 ```
 
 **Secret keys** — `pincode`, `password`, `basic-auth-user`, `basic-auth-password`.
@@ -271,14 +272,14 @@ spec:
 
 ```yaml
 spec:
-  rules:
-    - action: DROP
-      match: country
-      value: RU
-    - action: ACCEPT
-      match: cidr
-      value: 10.0.0.0/8
-      priority: 10
+    rules:
+        - action: DROP
+          match: country
+          value: RU
+        - action: ACCEPT
+          match: cidr
+          value: 10.0.0.0/8
+          priority: 10
 ```
 
 Valid `action` values: `ACCEPT`, `DROP`, `PASS`. Valid `match` values: `ip`, `cidr`, `path`, `country`.
@@ -290,7 +291,7 @@ so only the site name is needed — no namespace field required.
 
 ```yaml
 spec:
-  siteRef: homelab
+    siteRef: homelab
 ```
 
 ## PrivateResource
@@ -303,19 +304,19 @@ Registers a host, CIDR range, or HTTP web app with the Pangolin OLM VPN. Clients
 apiVersion: pangolin.home-operations.com/v1alpha1
 kind: PrivateResource
 metadata:
-  name: cluster-pods
-  namespace: network
+    name: cluster-pods
+    namespace: network
 spec:
-  siteRef: homelab
-  name: Cluster Pod Network
-  mode: cidr              # host | cidr | http
-  destination: 10.42.0.0/16
-  tcpPorts: "*"
-  udpPorts: "*"
-  disableIcmp: false
-  roleIds: [1, 2]
-  userIds: []
-  clientIds: []
+    siteRef: homelab
+    name: Cluster Pod Network
+    mode: cidr # host | cidr | http
+    destination: 10.42.0.0/16
+    tcpPorts: "*"
+    udpPorts: "*"
+    disableIcmp: false
+    roleIds: [1, 2]
+    userIds: []
+    clientIds: []
 ```
 
 In `host` mode, `destination` can be an IP address or a hostname. If it is a hostname, `alias` (a FQDN) is required.
@@ -328,18 +329,18 @@ In `host` mode, `destination` can be an IP address or a hostname. If it is a hos
 apiVersion: pangolin.home-operations.com/v1alpha1
 kind: PrivateResource
 metadata:
-  name: internal-grafana
-  namespace: monitoring
+    name: internal-grafana
+    namespace: monitoring
 spec:
-  siteRef: homelab
-  name: Internal Grafana
-  mode: http
-  fullDomain: grafana.internal.example.com   # must be a subdomain of a Pangolin-managed domain
-  destination: grafana.monitoring.svc.cluster.local
-  destinationPort: 3000
-  scheme: http        # http | https (backend protocol; default http)
-  ssl: true           # public-facing TLS (default true)
-  roleIds: [1]
+    siteRef: homelab
+    name: Internal Grafana
+    mode: http
+    fullDomain: grafana.internal.example.com # must be a subdomain of a Pangolin-managed domain
+    destination: grafana.monitoring.svc.cluster.local
+    destinationPort: 3000
+    scheme: http # http | https (backend protocol; default http)
+    ssl: true # public-facing TLS (default true)
+    roleIds: [1]
 ```
 
 The `fullDomain` is resolved against the organisation's Pangolin domains the same way `PublicResource.fullDomain` is. Adoption of an existing Pangolin private HTTP resource matches by `name` + `mode` + `fullDomain` (rather than `destination`), so changing the backend hostname or port reuses the existing resource.
@@ -348,10 +349,10 @@ The `fullDomain` is resolved against the organisation's Pangolin domains the sam
 
 When `autoDiscover` is set on a `NewtSite`, the operator can watch `HTTPRoute` and `Service` resources and automatically create `PublicResource` CRs owned by the `NewtSite`. Both discovery modes are **disabled by default** and must be explicitly enabled.
 
-| Field | Default | Description |
-|---|---|---|
-| `enableRouteDiscovery` | `false` | Enable HTTPRoute auto-discovery |
-| `enableServiceDiscovery` | `false` | Enable Service auto-discovery |
+| Field                    | Default | Description                     |
+| ------------------------ | ------- | ------------------------------- |
+| `enableRouteDiscovery`   | `false` | Enable HTTPRoute auto-discovery |
+| `enableServiceDiscovery` | `false` | Enable Service auto-discovery   |
 
 ### HTTPRoute
 
@@ -361,50 +362,50 @@ HTTPRoute discovery is enabled by setting `enableRouteDiscovery: true` on `autoD
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: my-app
-  namespace: default
-  annotations:
-    pangolin-operator/site-ref: homelab
+    name: my-app
+    namespace: default
+    annotations:
+        pangolin-operator/site-ref: homelab
 spec:
-  hostnames:
-    - app.example.com
-  rules:
-    - backendRefs:
-        - name: my-app
-          port: 8080
+    hostnames:
+        - app.example.com
+    rules:
+        - backendRefs:
+              - name: my-app
+                port: 8080
 ```
 
 #### HTTPRoute annotations
 
-| Annotation | Description |
-|---|---|
-| `pangolin-operator/site-ref` | Name of the `NewtSite` to use (required unless matched by gateway) |
-| `pangolin-operator/site-namespace` | Namespace of the `NewtSite` (defaults to route namespace) |
-| `pangolin-operator/enabled: "false"` | Opt out — skip this route |
-| `pangolin-operator/name` | Override resource display name (defaults to route name) |
-| `pangolin-operator/ssl: "false"` | Disable SSL |
-| `pangolin-operator/method` | Internal backend protocol: `http`, `https`, or `h2c` (default `http`) |
-| `pangolin-operator/host-header` | Override the `Host` header sent to the backend |
-| `pangolin-operator/tls-server-name` | Override the TLS SNI name (defaults to the hostname) |
-| `pangolin-operator/headers` | JSON array of extra headers: `[{"name":"X-Foo","value":"bar"}]` |
-| `pangolin-operator/auth-sso: "true"` | Enable SSO authentication |
-| `pangolin-operator/auth-sso-roles` | Comma-separated Pangolin roles (overrides site default) |
-| `pangolin-operator/auth-sso-users` | Comma-separated user e-mails (overrides site default) |
-| `pangolin-operator/auth-sso-idp` | Pangolin IdP ID for auto-login (overrides site default) |
-| `pangolin-operator/auth-whitelist-users` | Comma-separated user e-mails for whitelist |
-| `pangolin-operator/auth-secret` | Kubernetes Secret name containing sensitive auth values |
-| `pangolin-operator/maintenance-enabled: "true"` | Enable maintenance page |
-| `pangolin-operator/maintenance-type` | `forced` or `automatic` |
-| `pangolin-operator/maintenance-title` | Maintenance page title |
-| `pangolin-operator/maintenance-message` | Maintenance page body |
-| `pangolin-operator/maintenance-estimated-time` | Estimated duration |
-| `pangolin-operator/rules` | JSON array of access control rules |
-| `pangolin-operator/target-path` | Target path prefix, exact path, or regex |
-| `pangolin-operator/target-path-match` | `prefix`, `exact`, or `regex` |
-| `pangolin-operator/target-rewrite-path` | Rewrite request path to this value |
-| `pangolin-operator/target-rewrite-match` | `exact`, `prefix`, `regex`, or `stripPrefix` |
-| `pangolin-operator/target-priority` | Load-balancing priority (1–1000) |
-| `pangolin-operator/target-enabled` | `"true"` or `"false"` to enable/disable the target |
+| Annotation                                      | Description                                                           |
+| ----------------------------------------------- | --------------------------------------------------------------------- |
+| `pangolin-operator/site-ref`                    | Name of the `NewtSite` to use (required unless matched by gateway)    |
+| `pangolin-operator/site-namespace`              | Namespace of the `NewtSite` (defaults to route namespace)             |
+| `pangolin-operator/enabled: "false"`            | Opt out — skip this route                                             |
+| `pangolin-operator/name`                        | Override resource display name (defaults to route name)               |
+| `pangolin-operator/ssl: "false"`                | Disable SSL                                                           |
+| `pangolin-operator/method`                      | Internal backend protocol: `http`, `https`, or `h2c` (default `http`) |
+| `pangolin-operator/host-header`                 | Override the `Host` header sent to the backend                        |
+| `pangolin-operator/tls-server-name`             | Override the TLS SNI name (defaults to the hostname)                  |
+| `pangolin-operator/headers`                     | JSON array of extra headers: `[{"name":"X-Foo","value":"bar"}]`       |
+| `pangolin-operator/auth-sso: "true"`            | Enable SSO authentication                                             |
+| `pangolin-operator/auth-sso-roles`              | Comma-separated Pangolin roles (overrides site default)               |
+| `pangolin-operator/auth-sso-users`              | Comma-separated user e-mails (overrides site default)                 |
+| `pangolin-operator/auth-sso-idp`                | Pangolin IdP ID for auto-login (overrides site default)               |
+| `pangolin-operator/auth-whitelist-users`        | Comma-separated user e-mails for whitelist                            |
+| `pangolin-operator/auth-secret`                 | Kubernetes Secret name containing sensitive auth values               |
+| `pangolin-operator/maintenance-enabled: "true"` | Enable maintenance page                                               |
+| `pangolin-operator/maintenance-type`            | `forced` or `automatic`                                               |
+| `pangolin-operator/maintenance-title`           | Maintenance page title                                                |
+| `pangolin-operator/maintenance-message`         | Maintenance page body                                                 |
+| `pangolin-operator/maintenance-estimated-time`  | Estimated duration                                                    |
+| `pangolin-operator/rules`                       | JSON array of access control rules                                    |
+| `pangolin-operator/target-path`                 | Target path prefix, exact path, or regex                              |
+| `pangolin-operator/target-path-match`           | `prefix`, `exact`, or `regex`                                         |
+| `pangolin-operator/target-rewrite-path`         | Rewrite request path to this value                                    |
+| `pangolin-operator/target-rewrite-match`        | `exact`, `prefix`, `regex`, or `stripPrefix`                          |
+| `pangolin-operator/target-priority`             | Load-balancing priority (1–1000)                                      |
+| `pangolin-operator/target-enabled`              | `"true"` or `"false"` to enable/disable the target                    |
 
 ### Service
 
@@ -414,29 +415,29 @@ Service discovery is enabled by setting `enableServiceDiscovery: true` on `autoD
 
 #### Service annotations
 
-| Annotation | Description |
-|---|---|
-| `pangolin-operator/site-ref` | Name of the `NewtSite` (required) |
-| `pangolin-operator/site-namespace` | Namespace of the `NewtSite` |
-| `pangolin-operator/enabled` | `"false"` to opt out |
-| `pangolin-operator/full-domain` | Public domain — activates HTTP mode |
-| `pangolin-operator/port` | Port number or name to expose (required when Service has multiple ports and none named `http`) |
-| `pangolin-operator/protocol` | `tcp` or `udp` (TCP/UDP mode only) |
-| `pangolin-operator/all-ports: "true"` | Expose every Service port as a separate resource |
-| `pangolin-operator/name` | Override resource display name |
-| `pangolin-operator/method` | HTTP mode: `http`, `https`, or `h2c` |
-| `pangolin-operator/ssl` | HTTP mode: enable/disable SSL |
-| `pangolin-operator/host-header` | HTTP mode: override Host header |
-| `pangolin-operator/tls-server-name` | HTTP mode: override TLS SNI |
-| `pangolin-operator/headers` | HTTP mode: JSON array of extra headers |
-| `pangolin-operator/auth-sso` | HTTP mode: enable SSO |
-| `pangolin-operator/auth-sso-roles` | HTTP mode: SSO roles |
-| `pangolin-operator/auth-sso-users` | HTTP mode: SSO users |
-| `pangolin-operator/auth-sso-idp` | HTTP mode: auto-login IdP ID |
-| `pangolin-operator/auth-whitelist-users` | HTTP mode: whitelist users |
-| `pangolin-operator/auth-secret` | HTTP mode: Secret name for sensitive auth |
-| `pangolin-operator/maintenance-enabled` | HTTP mode: enable maintenance page |
-| `pangolin-operator/rules` | HTTP mode: JSON access control rules |
+| Annotation                               | Description                                                                                    |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `pangolin-operator/site-ref`             | Name of the `NewtSite` (required)                                                              |
+| `pangolin-operator/site-namespace`       | Namespace of the `NewtSite`                                                                    |
+| `pangolin-operator/enabled`              | `"false"` to opt out                                                                           |
+| `pangolin-operator/full-domain`          | Public domain — activates HTTP mode                                                            |
+| `pangolin-operator/port`                 | Port number or name to expose (required when Service has multiple ports and none named `http`) |
+| `pangolin-operator/protocol`             | `tcp` or `udp` (TCP/UDP mode only)                                                             |
+| `pangolin-operator/all-ports: "true"`    | Expose every Service port as a separate resource                                               |
+| `pangolin-operator/name`                 | Override resource display name                                                                 |
+| `pangolin-operator/method`               | HTTP mode: `http`, `https`, or `h2c`                                                           |
+| `pangolin-operator/ssl`                  | HTTP mode: enable/disable SSL                                                                  |
+| `pangolin-operator/host-header`          | HTTP mode: override Host header                                                                |
+| `pangolin-operator/tls-server-name`      | HTTP mode: override TLS SNI                                                                    |
+| `pangolin-operator/headers`              | HTTP mode: JSON array of extra headers                                                         |
+| `pangolin-operator/auth-sso`             | HTTP mode: enable SSO                                                                          |
+| `pangolin-operator/auth-sso-roles`       | HTTP mode: SSO roles                                                                           |
+| `pangolin-operator/auth-sso-users`       | HTTP mode: SSO users                                                                           |
+| `pangolin-operator/auth-sso-idp`         | HTTP mode: auto-login IdP ID                                                                   |
+| `pangolin-operator/auth-whitelist-users` | HTTP mode: whitelist users                                                                     |
+| `pangolin-operator/auth-secret`          | HTTP mode: Secret name for sensitive auth                                                      |
+| `pangolin-operator/maintenance-enabled`  | HTTP mode: enable maintenance page                                                             |
+| `pangolin-operator/rules`                | HTTP mode: JSON access control rules                                                           |
 
 #### Port selection (single-port mode)
 
@@ -452,9 +453,9 @@ Instead of annotating every `HTTPRoute` with `site-ref`, set `gatewayName` on th
 
 ```yaml
 spec:
-  autoDiscover:
-    gatewayName: envoy-gateway
-    gatewayNamespace: network
+    autoDiscover:
+        gatewayName: envoy-gateway
+        gatewayNamespace: network
 ```
 
 Individual routes can still override with `pangolin-operator/site-ref` or opt out with `pangolin-operator/enabled: "false"`.
@@ -465,8 +466,8 @@ To avoid conflicts when running multiple operators or sites, set `annotationPref
 
 ```yaml
 spec:
-  autoDiscover:
-    annotationPrefix: myorg
+    autoDiscover:
+        annotationPrefix: myorg
 ```
 
 Then annotate resources with `myorg/site-ref`, `myorg/enabled`, etc.
@@ -490,31 +491,31 @@ helm install pangolin-operator oci://ghcr.io/home-operations/charts/pangolin-ope
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
-  name: pangolin-operator
-  namespace: flux-system
+    name: pangolin-operator
+    namespace: flux-system
 spec:
-  interval: 15m
-  ref:
-    tag: 0.1.0
-  url: oci://ghcr.io/home-operations/charts/pangolin-operator
+    interval: 15m
+    ref:
+        tag: 0.1.0
+    url: oci://ghcr.io/home-operations/charts/pangolin-operator
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: pangolin-operator
-  namespace: pangolin-operator
-spec:
-  chartRef:
-    kind: OCIRepository
     name: pangolin-operator
-    namespace: flux-system
-  interval: 1h
-  values:
-    pangolin:
-      apiUrl: https://pangolin.example.com
-      endpoint: https://pangolin.example.com
-      orgId: <org-id>
-      existingSecret: pangolin-operator-credentials   # keys: PANGOLIN_API_URL, PANGOLIN_API_KEY, PANGOLIN_ORG_ID, PANGOLIN_ENDPOINT
+    namespace: pangolin-operator
+spec:
+    chartRef:
+        kind: OCIRepository
+        name: pangolin-operator
+        namespace: flux-system
+    interval: 1h
+    values:
+        pangolin:
+            apiUrl: https://pangolin.example.com
+            endpoint: https://pangolin.example.com
+            orgId: <org-id>
+            existingSecret: pangolin-operator-credentials # keys: PANGOLIN_API_URL, PANGOLIN_API_KEY, PANGOLIN_ORG_ID, PANGOLIN_ENDPOINT
 ```
 
 ## Quick start
@@ -528,40 +529,40 @@ spec:
 apiVersion: pangolin.home-operations.com/v1alpha1
 kind: NewtSite
 metadata:
-  name: homelab
-  namespace: network
+    name: homelab
+    namespace: network
 spec:
-  name: Homelab
-  autoDiscover:
-    enableRouteDiscovery: true
-    gatewayName: envoy-gateway
-    ssl: true
-    denyCountries: "RU,CN,KP,IR"
+    name: Homelab
+    autoDiscover:
+        enableRouteDiscovery: true
+        gatewayName: envoy-gateway
+        ssl: true
+        denyCountries: "RU,CN,KP,IR"
 ---
 # 2. Static public resource (no HTTPRoute needed)
 apiVersion: pangolin.home-operations.com/v1alpha1
 kind: PublicResource
 metadata:
-  name: forgejo-ssh
-  namespace: network
+    name: forgejo-ssh
+    namespace: network
 spec:
-  siteRef: homelab
-  name: Forgejo SSH
-  protocol: tcp
-  proxyPort: 2222
-  targets:
-    - hostname: forgejo.selfhosted.svc.cluster.local
-      port: 22
+    siteRef: homelab
+    name: Forgejo SSH
+    protocol: tcp
+    proxyPort: 2222
+    targets:
+        - hostname: forgejo.selfhosted.svc.cluster.local
+          port: 22
 ---
 # 3. Private OLM resource
 apiVersion: pangolin.home-operations.com/v1alpha1
 kind: PrivateResource
 metadata:
-  name: cluster-pods
-  namespace: network
+    name: cluster-pods
+    namespace: network
 spec:
-  siteRef: homelab
-  name: Cluster Pod Network
-  mode: cidr
-  destination: 10.42.0.0/16
+    siteRef: homelab
+    name: Cluster Pod Network
+    mode: cidr
+    destination: 10.42.0.0/16
 ```

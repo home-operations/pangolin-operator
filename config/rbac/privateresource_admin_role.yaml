@@ -19,7 +19,7 @@ rules:
     resources:
       - privateresources
     verbs:
-      - '*'
+      - "*"
   - apiGroups:
       - pangolin.home-operations.com
     resources:
