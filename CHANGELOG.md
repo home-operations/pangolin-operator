@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.5](https://github.com/home-operations/pangolin-operator/compare/0.1.4...0.1.5) (2026-05-31)
+
+
+### Miscellaneous Chores
+
+* implement oxfmt ([c562a3d](https://github.com/home-operations/pangolin-operator/commit/c562a3d71a2b7aa5c7520c7856ab0710c58e7f38))
+* remove default draft-pull-request from release-please config ([e380cd2](https://github.com/home-operations/pangolin-operator/commit/e380cd2cd69b790d31c0c38aa11436f6bebf40f3))
+* shorten mise tool names and pin to semver ([75390ef](https://github.com/home-operations/pangolin-operator/commit/75390ef9d7a244eae8cae9e0c2caa7d999affafc))
+
 ## [0.1.4](https://github.com/home-operations/pangolin-operator/compare/0.1.3...0.1.4) (2026-05-20)
 
 
