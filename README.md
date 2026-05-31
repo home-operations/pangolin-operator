@@ -1,5 +1,7 @@
 # pangolin-operator
 
+Project archived, check out https://github.com/fosrl/pangolin-kube-controller
+
 A Kubernetes operator that manages [Pangolin](https://github.com/fosrl/pangolin) tunnel infrastructure through native Kubernetes resources. It provisions Pangolin sites, manages the [newt](https://github.com/fosrl/newt) tunnel Deployment, and continuously reconciles public and private resources against the Pangolin API.
 
 ## How it works
